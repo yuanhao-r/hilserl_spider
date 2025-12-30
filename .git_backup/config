@@ -1,0 +1,14 @@
+[core]
+	repositoryformatversion = 0
+	filemode = true
+	bare = false
+	logallrefupdates = true
+[lfs]
+	repositoryformatversion = 0
+	allowincompletepush = true
+[branch "main"]
+	gk-last-accessed = 2025-12-30T03:27:44.551Z
+	gk-last-modified = 2025-12-30T03:27:44.551Z
+[remote "origin"]
+	url = git@github.com:yuanhao-r/hilserl_spider.git
+	fetch = +refs/heads/*:refs/remotes/origin/*

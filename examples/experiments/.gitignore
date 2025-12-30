@@ -1,0 +1,9 @@
+demo_data/
+classifier_ckpt/
+classifier_data/
+first_run/
+demo_data.bak/
+classifier_ckpt.bak/
+classifier_data.bak/
+first_run.bak/
+first_run.bak.bak/

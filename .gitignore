@@ -1,0 +1,16 @@
+*.pyc
+__pycache__/
+openpi_test/data_raw/
+openpi_test/data_transformed/
+openpi_test/openpi/checkpoints/
+openpi_test/openpi/model/
+lerobot/
+*.tar
+*.gz
+*.zip
+*.safetensors
+*.pkl
+*.png
+*.jpg
+*.jpeg
+.vscode/

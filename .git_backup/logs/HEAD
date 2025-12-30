@@ -1,0 +1,6 @@
+0000000000000000000000000000000000000000 680074838a3ce80d2bd5052f1bf24ced8c680e12 {{name}} <qiang.xu@spiderrobot.com> 1767002070 +0800	commit (initial): 1229删除原先模型文件
+680074838a3ce80d2bd5052f1bf24ced8c680e12 0000000000000000000000000000000000000000 {{name}} <qiang.xu@spiderrobot.com> 1767063521 +0800	Branch: renamed refs/heads/main to refs/heads/main
+680074838a3ce80d2bd5052f1bf24ced8c680e12 680074838a3ce80d2bd5052f1bf24ced8c680e12 {{name}} <qiang.xu@spiderrobot.com> 1767063521 +0800	Branch: renamed refs/heads/main to refs/heads/main
+680074838a3ce80d2bd5052f1bf24ced8c680e12 0000000000000000000000000000000000000000 {{name}} <qiang.xu@spiderrobot.com> 1767063716 +0800	Branch: renamed refs/heads/main to refs/heads/main
+680074838a3ce80d2bd5052f1bf24ced8c680e12 680074838a3ce80d2bd5052f1bf24ced8c680e12 {{name}} <qiang.xu@spiderrobot.com> 1767063716 +0800	Branch: renamed refs/heads/main to refs/heads/main
+680074838a3ce80d2bd5052f1bf24ced8c680e12 1d252b7d85218eaeca8c84a035c9e2046746e548 {{name}} <qiang.xu@spiderrobot.com> 1767065114 +0800	commit: Remove test_rs.bag from LFS
