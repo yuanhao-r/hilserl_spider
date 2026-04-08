@@ -8,13 +8,14 @@ connect to arm:
 
 | Arm | Host Address | Netmask | Gateway | Arm Address | Website Control |
 | :---: | :---: | :---: | :---: | :---: | :---: |
-| xarm | 192.168.1.100 | 255.255.255.0 | 192.168.1.1 | 192.168.1.232 | 192.168.1.232:18333 |
+| xarm | 192.168.1.100 | 255.255.255.0 | 192.168.1.1 | 192.168.1.198 | 192.168.1.198:18333 |
 | realman | 192.168.124.100 | 255.255.255.0 | 192.168.124.1 | 192.168.124.18 | 192.168.124.18 |
 
 
 ## Data collect:
 ```bash
 cd experiments/ram_insertion
+export HILSERL_ARM_BACKEND=tianji
 python ../../record_demos.py --exp_name ram_insertion --successes_needed 20
 ```
 

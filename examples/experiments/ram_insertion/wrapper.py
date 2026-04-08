@@ -1,18 +1,25 @@
 import copy
+import os
 import time
-from franka_env.utils.rotations import euler_2_quat
-from scipy.spatial.transform import Rotation as R
 import numpy as np
-import requests
 from pynput import keyboard
 
-from franka_env.envs.realman_env import RealmanEnv
 from franka_env.envs.xarm_env import XArmEnv
+from franka_env.envs.tianji_env import TianjiEnv
 
-class RAMEnv(XArmEnv):
+ROBOT_BACKEND = os.environ.get("HILSERL_ARM_BACKEND", "tianji").lower()
+
+if ROBOT_BACKEND in {"tianji", "marvin"}:
+    BaseRAMRobotEnv = TianjiEnv
+else:
+    BaseRAMRobotEnv = XArmEnv
+
+
+class RAMEnv(BaseRAMRobotEnv):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.should_regrasp = False
+        self.auto_quick_regrasp = bool(getattr(self.config, "AUTO_QUICK_REGRASP", False))
         self._gripper_control(True)
 
         def on_press(key):
@@ -49,8 +56,7 @@ class RAMEnv(XArmEnv):
         # perform joint reset if needed
         if joint_reset:
             print("JOINT RESET")
-            reset_pose = self.resetpos.copy()
-            self._send_joint_command(reset_pose)
+            self._send_joint_command(self._BASIC_JOINT_RESET)
             time.sleep(0.5)
             return
 
@@ -134,7 +140,7 @@ class RAMEnv(XArmEnv):
             self.regrasp()
             self.should_regrasp = False
         
-        if True:
+        if self.auto_quick_regrasp:
             self.quick_regrasp()
 
         self.go_to_reset(joint_reset=joint_reset, replay_start_pose=replay_start_pose)

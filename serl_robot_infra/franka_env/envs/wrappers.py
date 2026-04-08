@@ -1,4 +1,5 @@
 import time
+import os
 from gymnasium import Env, spaces
 import gymnasium as gym
 import numpy as np
@@ -15,6 +16,12 @@ import pickle as pkl
 import random
 
 sigmoid = lambda x: 1 / (1 + np.exp(-x))
+
+
+def _apply_deadband(action: np.ndarray, deadband: float) -> np.ndarray:
+    filtered = np.array(action, dtype=np.float32, copy=True)
+    filtered[np.abs(filtered) < deadband] = 0.0
+    return filtered
 
 class HumanClassifierWrapper(gym.Wrapper):
     def __init__(self, env):
@@ -227,7 +234,14 @@ class GripperCloseEnv(gym.ActionWrapper):
 
     
 class SpacemouseIntervention(gym.ActionWrapper):
-    def __init__(self, env, action_indices=None, gripper_control=True):
+    def __init__(
+        self,
+        env,
+        action_indices=None,
+        gripper_control=True,
+        deadband=0.05,
+        require_button=False,
+    ):
         super().__init__(env)
 
         self.gripper_enabled = True
@@ -238,6 +252,10 @@ class SpacemouseIntervention(gym.ActionWrapper):
         self.expert = SpaceMouseExpert()
         self.left, self.right = False, False
         self.action_indices = action_indices
+        self.deadband = float(os.environ.get("HILSERL_SPACEMOUSE_DEADBAND", deadband))
+        self.require_button = bool(
+            int(os.environ.get("HILSERL_SPACEMOUSE_REQUIRE_BUTTON", int(require_button)))
+        )
         
         self.pause_control = False
         self.listener = keyboard.Listener(
@@ -265,10 +283,9 @@ class SpacemouseIntervention(gym.ActionWrapper):
         """
         expert_a, buttons = self.expert.get_action()
         self.left, self.right = tuple(buttons)
-        intervened = False
-        
-        if np.linalg.norm(expert_a) > 0.001:
-            intervened = True
+        expert_a = _apply_deadband(expert_a, self.deadband)
+        button_pressed = bool(self.left or self.right)
+        intervened = bool(np.linalg.norm(expert_a) > 1e-6)
 
         if self.gripper_enabled:
             if self.gripper_control:
@@ -288,6 +305,10 @@ class SpacemouseIntervention(gym.ActionWrapper):
             filtered_expert_a = np.zeros_like(expert_a)
             filtered_expert_a[self.action_indices] = expert_a[self.action_indices]
             expert_a = filtered_expert_a
+            intervened = bool(np.linalg.norm(expert_a) > 1e-6)
+
+        if self.require_button and not button_pressed:
+            intervened = False
 
         if intervened:
             return expert_a, True

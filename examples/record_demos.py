@@ -1,4 +1,6 @@
 import os
+import sys
+from pathlib import Path
 from tqdm import tqdm
 import numpy as np
 import copy
@@ -6,6 +8,21 @@ import pickle as pkl
 import datetime
 from absl import app, flags
 import time
+
+# Prefer local project paths to avoid importing stale/global hil-serl installs.
+_EXAMPLES_DIR = Path(__file__).resolve().parent
+_REPO_ROOT = _EXAMPLES_DIR.parent
+_WORKSPACE_ROOT = _REPO_ROOT.parent
+for _p in [
+    _REPO_ROOT / "serl_robot_infra",
+    _REPO_ROOT / "serl_launcher",
+    _REPO_ROOT / "examples",
+    _WORKSPACE_ROOT / "test_teleop" / "python",
+    _WORKSPACE_ROOT / "test_teleop" / "demo",
+]:
+    _p_str = str(_p)
+    if _p.exists() and _p_str not in sys.path:
+        sys.path.insert(0, _p_str)
 
 from experiments.mappings import CONFIG_MAPPING
 

@@ -6,7 +6,7 @@ parser = argparse.ArgumentParser(description='夹爪控制')
 parser.add_argument('--cmd', type=int, default=1, help='True: 关闭夹爪, False: 打开夹爪')
 args = parser.parse_args()
 
-ip = "192.168.1.232"
+ip = "192.168.1.198"
 
 arm = XArmAPI(ip)
 arm.motion_enable(enable=True)

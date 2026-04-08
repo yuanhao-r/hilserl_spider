@@ -519,7 +519,7 @@ class AutoDataRecorder:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--ip", type=str, default="192.168.1.232", help="xArm IP")
+    parser.add_argument("--ip", type=str, default="192.168.1.198", help="xArm IP")
     parser.add_argument("--output", type=str, default="data_auto_queue_PutAndRecord_1217/raw", help="Output directory")
     args = parser.parse_args()
     

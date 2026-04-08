@@ -5,7 +5,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 import copy
 
-ip = "192.168.1.232"
+ip = "192.168.1.198"
 
 arm = XArmAPI(ip)
 arm.motion_enable(enable=True)
@@ -14,8 +14,8 @@ arm.set_state(state=0)
 time.sleep(1)
 
 # arm.move_gohome(wait=True)
-target_pos = [539.120605, 17.047951, 100-69.568863, 3.12897, 0.012689, -1.01436]
-arm.set_position(x=target_pos[0], y=target_pos[1], z=target_pos[2], roll=target_pos[3], pitch=target_pos[4], yaw=target_pos[5], speed=60, wait=True, is_radian=True)
+target_pos = [-402.958649, -576.19873, 199.391266, -3.123522, -0.012916, -2.533455]
+# arm.set_position(x=target_pos[0], y=target_pos[1], z=target_pos[2], roll=target_pos[3], pitch=target_pos[4], yaw=target_pos[5], speed=60, wait=True, is_radian=True)
 
 print(arm.get_position(is_radian=True))
 print(arm.get_joint_states(is_radian=False))

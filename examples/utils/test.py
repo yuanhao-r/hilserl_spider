@@ -5,7 +5,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 import copy
 
-ip = "192.168.1.232"
+ip = "192.168.1.198"
 
 arm = XArmAPI(ip)
 arm.motion_enable(enable=True)

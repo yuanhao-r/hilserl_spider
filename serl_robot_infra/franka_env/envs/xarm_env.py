@@ -48,7 +48,7 @@ class ImageDisplayer(threading.Thread):
 class DefaultXArmEnvConfig:
     """Default configuration for FrankaEnv. Fill in the values below."""
 
-    SERVER_URL: str = "192.168.1.232"
+    SERVER_URL: str = "192.168.1.198"
     REALSENSE_CAMERAS: Dict = {
         "wrist_1": "130322274175",
         "wrist_2": "127122270572",
