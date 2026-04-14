@@ -43,11 +43,11 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
         )
         REALSENSE_CAMERAS = {
             "wrist_1": {
-                "camera_index": 0,
+                "camera_type": "orbbec",
                 "dim": (1280, 720),
             },
             "wrist_2": {
-                "camera_index": 2,
+                "camera_index": 12,
                 "dim": (1280, 720),
             },
         }
@@ -63,24 +63,55 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
         GRASP_POSE_MM = np.zeros((6,), dtype=np.float64)
         RESET_POSE_MM = np.zeros((6,), dtype=np.float64)
 
+        # 1. 抓取点 / 插入完成点 (使用你测试过的坐标)
+        TARGET_JOINTS = np.array([-8.655314,-70.119028,-80.595401,-48.706882,49.187142,-19.077660,26.062595], dtype=np.float64)
+        # GRASP_JOINTS = np.array([-8.655314,-70.119028,-80.595401,-48.706882,49.187142,-19.077660,26.062595], dtype=np.float64)
+        
+        # 2. 抓取点正上方 (请务必用示教器把机械臂提起到内存槽正上方，并把那时的关节角填到这里！)
+        # (这里暂时填的复位点做示范，请一定修改为你实际的正上方安全点)
+        TOP_JOINTS = np.array([13.037354,-69.353395,-87.958374,-69.635683,50.185998,-18.033283,26.141799], dtype=np.float64)
+        
+        # 3. 初始复位待命点
+        RESET_JOINTS = np.array([14.371310,-68.838821,-88.439945,-72.759672,49.257913,-16.950136,24.544802], dtype=np.float64)
+
+
         TARGET_POSE = TARGET_POSE_MM.copy()
         GRASP_POSE = GRASP_POSE_MM.copy()
         RESET_POSE = RESET_POSE_MM.copy()
         TARGET_POSE[:3] /= 1000.0
         GRASP_POSE[:3] /= 1000.0
         RESET_POSE[:3] /= 1000.0
+        # 安全工作区（会在 step() 和随机化阶段裁剪目标位姿）
+        # 注意：若 RESET_JOINTS 正解位姿不在此范围内，系统会把目标“吸”到边界，表现为
+        # 1) 看起来随机偏移远大于 RANDOM_* 设定
+        # 2) 姿态被夹到边界后出现倾斜
+        # 3) SpaceMouse 往回拉时被边界限制
         ABS_POSE_LIMIT_LOW = np.array(
-            [0.15, -0.30, 0.30, -np.pi, -1.5, -np.pi], dtype=np.float64
+            [0.15, -3.30, 0.30, -np.pi, -np.pi, -np.pi], dtype=np.float64
         )
         ABS_POSE_LIMIT_HIGH = np.array(
-            [0.80, 0.30, 1.35, np.pi, 1.5, np.pi], dtype=np.float64
+            [3.80, 3.30, 3.35, np.pi, np.pi, np.pi], dtype=np.float64
         )
         REWARD_THRESHOLD = 0.001
         RANDOM_RESET = True
         RANDOM_XY_RANGE = 0.03
         RANDOM_RZ_RANGE = 0.0
-        AUTO_QUICK_REGRASP = False
-        ACTION_SCALE = (0.01, 0.0, 1)
+        AUTO_QUICK_REGRASP = True
+        # RL 探索速度（平移、旋转、夹爪）
+        ACTION_SCALE = (0.005, 0.0, 1)
+        # SpaceMouse 介入时的额外缩放（会叠加到 ACTION_SCALE 上）
+        SPACEMOUSE_LINEAR_SCALE = 1.0
+        SPACEMOUSE_ANGULAR_SCALE = 1.0
+        # 调试日志开关（强制关闭 TWITCH 日志）
+        DEBUG_TWITCH = False
+        DEBUG_TWITCH_RING = 80
+        # 夹爪时序：第一轮等待更久，避免未完全张开就下探
+        GRIPPER_OPEN_WAIT_SEC = 1.0
+        FIRST_ROUND_GRIPPER_OPEN_WAIT_SEC = 2.8
+        # reset 轨迹平滑参数（不影响 RL step 主频）
+        INTERPOLATE_HZ = 40.0
+        INTERPOLATE_MAX_STEP_DEG = 0.7
+        INTERPOLATE_EASE = True
         DISPLAY_IMAGE = True
         MAX_EPISODE_LENGTH = 1000
         BASIC_JOINT_RESET = np.array(
@@ -127,6 +158,8 @@ else:
         RANDOM_RZ_RANGE = 0.0
         AUTO_QUICK_REGRASP = True
         ACTION_SCALE = (0.01, 0.0, 1)
+        SPACEMOUSE_LINEAR_SCALE = 1.0
+        SPACEMOUSE_ANGULAR_SCALE = 1.0
         DISPLAY_IMAGE = True
         MAX_EPISODE_LENGTH = 1000
         BASIC_JOINT_RESET = np.array(
@@ -175,8 +208,9 @@ else:
 
 
 class TrainConfig(DefaultTrainingConfig):
-    image_keys = ["wrist_1", "wrist_2"]
-    classifier_keys = ["wrist_1", "wrist_2"]
+    # 相机键与 REALSENSE_CAMERAS 自动同步；只改 REALSENSE_CAMERAS 即可切单/双相机
+    image_keys = list(EnvConfig.REALSENSE_CAMERAS.keys())
+    classifier_keys = list(EnvConfig.REALSENSE_CAMERAS.keys())
     proprio_keys = ["tcp_pose",] # ["tcp_pose", "tcp_vel", "tcp_force", "tcp_torque", "gripper_pose"]
     buffer_period = 1000
     checkpoint_period = 2000
@@ -187,6 +221,8 @@ class TrainConfig(DefaultTrainingConfig):
 
     def get_environment(self, fake_env=False, save_video=False, classifier=False, replay_intervention_files=None):
         env_config = EnvConfig()
+        self.image_keys = list(env_config.REALSENSE_CAMERAS.keys())
+        self.classifier_keys = list(env_config.REALSENSE_CAMERAS.keys())
         env = RAMEnv(
             fake_env=fake_env,
             save_video=save_video,
@@ -196,7 +232,13 @@ class TrainConfig(DefaultTrainingConfig):
         if not fake_env:
             if replay_intervention_files is not None:
                 env = ReplayIntervention(env, replay_file_list=replay_intervention_files, action_scale=env_config.ACTION_SCALE)
-            env = SpacemouseIntervention(env, gripper_control=False, deadband=0.05)
+            env = SpacemouseIntervention(
+                env,
+                gripper_control=False,
+                deadband=0.05,
+                expert_linear_scale=getattr(env_config, "SPACEMOUSE_LINEAR_SCALE", 1.0),
+                expert_angular_scale=getattr(env_config, "SPACEMOUSE_ANGULAR_SCALE", 1.0),
+            )
         env = RelativeFrame(env)
         env = Quat2EulerWrapper(env)
         env = SERLObsWrapper(env, proprio_keys=self.proprio_keys)

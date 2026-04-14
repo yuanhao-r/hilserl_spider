@@ -6,5 +6,5 @@ python ../../train_rlpd.py "$@" \
     --exp_name=ram_insertion \
     --checkpoint_path=first_run \
     --actor \
-    --replay_intervention_path=./demo_data/ram_insertion_20_demos_2026-04-01_12-09-42.pkl \
+    --replay_intervention_path=./demo_data/ram_insertion_20_demos_2026-04-10_15-22-05.pkl \
   

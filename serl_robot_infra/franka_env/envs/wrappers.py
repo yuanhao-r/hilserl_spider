@@ -241,6 +241,8 @@ class SpacemouseIntervention(gym.ActionWrapper):
         gripper_control=True,
         deadband=0.05,
         require_button=False,
+        expert_linear_scale=1.0,
+        expert_angular_scale=1.0,
     ):
         super().__init__(env)
 
@@ -255,6 +257,22 @@ class SpacemouseIntervention(gym.ActionWrapper):
         self.deadband = float(os.environ.get("HILSERL_SPACEMOUSE_DEADBAND", deadband))
         self.require_button = bool(
             int(os.environ.get("HILSERL_SPACEMOUSE_REQUIRE_BUTTON", int(require_button)))
+        )
+        self.expert_linear_scale = float(
+            os.environ.get("HILSERL_SPACEMOUSE_LINEAR_SCALE", expert_linear_scale)
+        )
+        self.expert_angular_scale = float(
+            os.environ.get("HILSERL_SPACEMOUSE_ANGULAR_SCALE", expert_angular_scale)
+        )
+        env_debug_twitch = bool(int(os.environ.get("HILSERL_DEBUG_TWITCH", "0")))
+        cfg_debug_twitch = None
+        try:
+            base_env = self.env.unwrapped
+            cfg_debug_twitch = getattr(getattr(base_env, "config", None), "DEBUG_TWITCH", None)
+        except Exception:
+            cfg_debug_twitch = None
+        self.debug_twitch = (
+            env_debug_twitch if cfg_debug_twitch is None else bool(cfg_debug_twitch)
         )
         
         self.pause_control = False
@@ -284,6 +302,10 @@ class SpacemouseIntervention(gym.ActionWrapper):
         expert_a, buttons = self.expert.get_action()
         self.left, self.right = tuple(buttons)
         expert_a = _apply_deadband(expert_a, self.deadband)
+        if expert_a.shape[0] >= 3:
+            expert_a[:3] *= self.expert_linear_scale
+        if expert_a.shape[0] >= 6:
+            expert_a[3:6] *= self.expert_angular_scale
         button_pressed = bool(self.left or self.right)
         intervened = bool(np.linalg.norm(expert_a) > 1e-6)
 
@@ -318,6 +340,9 @@ class SpacemouseIntervention(gym.ActionWrapper):
     def step(self, action):
 
         new_action, replaced = self.action(action)
+        # 左/右键用于成功/失败判定时，本拍直接发零位移，避免结束帧额外抖动一下
+        if (not self.gripper_control) and (self.left or self.right):
+            new_action = np.zeros_like(new_action)
 
         obs, rew, done, truncated, info = self.env.step(new_action)
         info["left"] = self.left
@@ -327,9 +352,25 @@ class SpacemouseIntervention(gym.ActionWrapper):
             if self.left:
                 rew += 1
                 done = True
+                if self.debug_twitch:
+                    base_env = self.env.unwrapped
+                    if hasattr(base_env, "_debug_log"):
+                        base_env._debug_log("spacemouse left button -> episode done")
+                    if hasattr(base_env, "debug_dump_recent_joint_samples"):
+                        base_env.debug_dump_recent_joint_samples(
+                            reason="spacemouse_left_done", window=3
+                        )
             elif self.right:
                 rew = rew
                 done = True
+                if self.debug_twitch:
+                    base_env = self.env.unwrapped
+                    if hasattr(base_env, "_debug_log"):
+                        base_env._debug_log("spacemouse right button -> episode done")
+                    if hasattr(base_env, "debug_dump_recent_joint_samples"):
+                        base_env.debug_dump_recent_joint_samples(
+                            reason="spacemouse_right_done", window=3
+                        )
                 
         if "intervene_action" not in info and replaced:
             info["intervene_action"] = new_action

@@ -6,7 +6,7 @@ import queue
 import sys
 import threading
 import time
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from datetime import datetime
 from pathlib import Path
 from typing import Dict
@@ -100,12 +100,19 @@ class DefaultTianjiEnvConfig:
     REWARD_THRESHOLD: np.ndarray = np.zeros((6,))
 
     ACTION_SCALE = np.zeros((3,))
+    # 复位/示教等插值运动参数（不影响策略 step 主频）
+    INTERPOLATE_HZ: float = 40.0
+    INTERPOLATE_MAX_STEP_DEG: float = 0.8
+    INTERPOLATE_EASE: bool = True
     BASIC_JOINT_RESET = np.zeros((7,))
     RANDOM_RESET = False
     RANDOM_XY_RANGE = 0.0
     RANDOM_RZ_RANGE = 0.0
     ABS_POSE_LIMIT_HIGH = np.array([0.85, 0.35, 1.50, np.pi, np.pi, np.pi])
     ABS_POSE_LIMIT_LOW = np.array([-0.20, -0.55, 0.40, -np.pi, -np.pi, -np.pi])
+    # 若配置的安全框与真实关键位姿(当前/RESET/TARGET/GRASP)不一致，自动扩框避免“被边界吸住”
+    AUTO_EXPAND_ABS_POSE_LIMIT: bool = True
+    ABS_POSE_LIMIT_EXPAND_MARGIN_XYZ = np.array([0.02, 0.02, 0.02], dtype=np.float64)
 
     COMPLIANCE_PARAM: Dict[str, float] = {}
     RESET_PARAM: Dict[str, float] = {}
@@ -120,6 +127,10 @@ class DefaultTianjiEnvConfig:
     GRIPPER_SLEEP: float = 0.6
     MAX_EPISODE_LENGTH: int = 100
     JOINT_RESET_PERIOD: int = 0
+    # 调试开关：None 表示沿用环境变量 HILSERL_DEBUG_TWITCH
+    DEBUG_TWITCH = None
+    DEBUG_TWITCH_RING = None
+    DEBUG_SAFETY_CLIP: bool = True
 
     RIGHT_ARM_BASE_POSE_WXYZXYZ = np.array(
         [0.707105, 0.707108, -0.000005, 0.000005, 0.319484, -0.012501, 1.127505],
@@ -188,6 +199,11 @@ class TianjiEnv(gym.Env):
         self.display_image = config.DISPLAY_IMAGE
         self.gripper_sleep = config.GRIPPER_SLEEP
         self.hz = hz
+        self.interpolate_hz = float(getattr(config, "INTERPOLATE_HZ", 40.0))
+        self.interpolate_max_step_deg = float(
+            getattr(config, "INTERPOLATE_MAX_STEP_DEG", 0.8)
+        )
+        self.interpolate_ease = bool(getattr(config, "INTERPOLATE_EASE", True))
 
         self.randomreset = config.RANDOM_RESET
         self.random_xy_range = float(config.RANDOM_XY_RANGE)
@@ -203,6 +219,8 @@ class TianjiEnv(gym.Env):
         self.controller = None
         self.full_ik_solver = None
         self._warned_gripper_unavailable = False
+        # 关节空间直控/模式切换后，下一次 IK 需要用当前实测关节角重新对齐种子
+        self._ik_need_seed_refresh = True
 
         self.base_right_tf = None
         self.base_left_tf = None
@@ -220,6 +238,29 @@ class TianjiEnv(gym.Env):
 
         self._last_pose6 = None
         self._last_pose_t = None
+        env_debug_twitch = bool(int(os.environ.get("HILSERL_DEBUG_TWITCH", "0")))
+        cfg_debug_twitch = getattr(config, "DEBUG_TWITCH", None)
+        self.debug_twitch = (
+            env_debug_twitch if cfg_debug_twitch is None else bool(cfg_debug_twitch)
+        )
+        env_ring = int(os.environ.get("HILSERL_DEBUG_TWITCH_RING", "80"))
+        cfg_ring = getattr(config, "DEBUG_TWITCH_RING", None)
+        self._debug_joint_ring = deque(
+            maxlen=env_ring if cfg_ring is None else int(cfg_ring)
+        )
+        self.debug_safety_clip = bool(getattr(config, "DEBUG_SAFETY_CLIP", False))
+        self.auto_expand_abs_pose_limit = bool(
+            getattr(config, "AUTO_EXPAND_ABS_POSE_LIMIT", True)
+        )
+        margin_xyz = np.array(
+            getattr(config, "ABS_POSE_LIMIT_EXPAND_MARGIN_XYZ", 0.02),
+            dtype=np.float64,
+        ).reshape(-1)
+        if margin_xyz.size == 1:
+            margin_xyz = np.full(3, float(margin_xyz.item()), dtype=np.float64)
+        if margin_xyz.size != 3:
+            margin_xyz = np.array([0.02, 0.02, 0.02], dtype=np.float64)
+        self.abs_pose_limit_expand_margin_xyz = np.abs(margin_xyz)
 
         if not self.fake_env:
             if _MARVIN_IMPORT_ERROR is not None:
@@ -291,6 +332,7 @@ class TianjiEnv(gym.Env):
             np.array(config.ABS_POSE_LIMIT_HIGH[3:], dtype=np.float64),
             dtype=np.float64,
         )
+        self._ensure_safety_box_contains_key_poses(reason="init")
 
         self.action_space = gym.spaces.Box(
             np.ones((7,), dtype=np.float32) * -1,
@@ -350,25 +392,154 @@ class TianjiEnv(gym.Env):
 
         print("Initialized Tianji MARVIN Env.")
 
+
+    def _joints_deg_to_pose6(self, joints_deg):
+        """利用正运动学(FK)，把关节角度转化为6D笛卡尔位姿用于计算Reward"""
+        joints_rad = np.array(joints_deg, dtype=np.float64) * self.controller.DEG_TO_RAD
+        fk_mat = self.controller.compute_fk(joints_rad)
+        pose_mat = self.base_right_tf @ fk_mat @ self.tool_tf
+        return _transform_to_pose6(pose_mat)
+
     def _set_default_task_poses_from_current(self):
-        curr = self.currpos.copy()
+        """初始化时，直接根据 config 中的关节角自动计算对应的笛卡尔目标"""
+        if hasattr(self.config, "TARGET_JOINTS"):
+            self._TARGET_POSE = self._joints_deg_to_pose6(self.config.TARGET_JOINTS)
+        else:
+            self._TARGET_POSE = self.currpos.copy()
 
-        def _resolve(pose_like):
-            pose = np.array(pose_like, dtype=np.float64)
-            if pose.shape != (6,) or np.all(np.abs(pose) < 1e-8):
-                return curr.copy()
-            return pose
+        if hasattr(self.config, "RESET_JOINTS"):
+            self._RESET_POSE = self._joints_deg_to_pose6(self.config.RESET_JOINTS)
+            self.resetpos = self._RESET_POSE.copy()
+        else:
+            self._RESET_POSE = self.currpos.copy()
+            self.resetpos = self.currpos.copy()
 
-        self._TARGET_POSE = _resolve(self._TARGET_POSE)
-        self._GRASP_POSE = _resolve(self._GRASP_POSE)
-        self._RESET_POSE = _resolve(self._RESET_POSE)
-        self.resetpos = self._RESET_POSE.copy()
+        if hasattr(self.config, "GRASP_JOINTS"):
+            self._GRASP_POSE = self._joints_deg_to_pose6(self.config.GRASP_JOINTS)
+        else:
+            self._GRASP_POSE = self._TARGET_POSE.copy()
 
     def __del__(self):
         try:
             self.close()
         except Exception:
             pass
+
+    def _debug_log(self, message: str):
+        if not self.debug_twitch:
+            return
+        ts = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        print(f"[TWITCH {ts}] {message}")
+
+    def _debug_append_joint_sample(
+        self,
+        tag: str,
+        target_qr: np.ndarray | None = None,
+        ql_deg: np.ndarray | None = None,
+        qr_deg: np.ndarray | None = None,
+    ):
+        if not self.debug_twitch or self.fake_env or self.controller is None:
+            return
+        if ql_deg is None:
+            ql_deg = (
+                np.array(self.controller.get_joint_pos_rad(arm_id=1), dtype=np.float64)
+                / self.controller.DEG_TO_RAD
+            )
+        if qr_deg is None:
+            qr_deg = (
+                np.array(self.controller.get_joint_pos_rad(arm_id=2), dtype=np.float64)
+                / self.controller.DEG_TO_RAD
+            )
+        self._debug_joint_ring.append(
+            {
+                "t": time.time(),
+                "tag": tag,
+                "ql": np.array(ql_deg, dtype=np.float64),
+                "qr": np.array(qr_deg, dtype=np.float64),
+                "target_qr": None
+                if target_qr is None
+                else np.array(target_qr, dtype=np.float64),
+            }
+        )
+
+    def _debug_dump_recent_joint(self, reason: str, window: int = 3):
+        if not self.debug_twitch:
+            return
+        recent = list(self._debug_joint_ring)[-max(1, window * 2) :]
+        self._debug_log(f"{reason}: dump {len(recent)} samples")
+        for rec in recent:
+            qr_head = np.round(rec["qr"][:3], 3).tolist()
+            if rec["target_qr"] is None:
+                self._debug_log(f"{rec['tag']} qr[:3]={qr_head}")
+            else:
+                tgt_head = np.round(rec["target_qr"][:3], 3).tolist()
+                max_err = float(np.max(np.abs(rec["qr"] - rec["target_qr"])))
+                self._debug_log(
+                    f"{rec['tag']} qr[:3]={qr_head} target[:3]={tgt_head} max_err={max_err:.4f}deg"
+                )
+
+    def debug_dump_recent_joint_samples(self, reason: str = "manual", window: int = 3):
+        self._debug_dump_recent_joint(reason=reason, window=window)
+
+    def _mark_ik_seed_refresh(self, reason: str = ""):
+        self._ik_need_seed_refresh = True
+        if self.debug_twitch and reason:
+            self._debug_log(f"ik_seed_refresh marked: {reason}")
+
+    def _ensure_safety_box_contains_key_poses(self, reason: str = ""):
+        poses = []
+        for name in ("currpos", "_RESET_POSE", "_TARGET_POSE", "_GRASP_POSE"):
+            pose = getattr(self, name, None)
+            if pose is None:
+                continue
+            arr = np.array(pose, dtype=np.float64).reshape(-1)
+            if arr.shape[0] == 6 and np.all(np.isfinite(arr)):
+                poses.append(arr)
+        if not poses:
+            return
+
+        stacked = np.vstack(poses)
+        need_low_xyz = (
+            np.min(stacked[:, :3], axis=0) - self.abs_pose_limit_expand_margin_xyz
+        )
+        need_high_xyz = (
+            np.max(stacked[:, :3], axis=0) + self.abs_pose_limit_expand_margin_xyz
+        )
+
+        cur_low = np.array(self.xyz_bounding_box.low, dtype=np.float64)
+        cur_high = np.array(self.xyz_bounding_box.high, dtype=np.float64)
+
+        if self.auto_expand_abs_pose_limit:
+            new_low = np.minimum(cur_low, need_low_xyz)
+            new_high = np.maximum(cur_high, need_high_xyz)
+            if np.max(np.abs(new_low - cur_low)) > 1e-9 or np.max(
+                np.abs(new_high - cur_high)
+            ) > 1e-9:
+                self.xyz_bounding_box = gym.spaces.Box(
+                    new_low.astype(np.float64),
+                    new_high.astype(np.float64),
+                    dtype=np.float64,
+                )
+                print(
+                    "[SAFETY_BOX] auto-expand"
+                    f"{'' if reason == '' else f'({reason})'} "
+                    f"xyz_low={np.round(new_low, 4).tolist()} "
+                    f"xyz_high={np.round(new_high, 4).tolist()}"
+                )
+        else:
+            bad_low = need_low_xyz < cur_low - 1e-9
+            bad_high = need_high_xyz > cur_high + 1e-9
+            if np.any(bad_low) or np.any(bad_high):
+                names = np.array(["x", "y", "z"])
+                clipped_axes = names[np.logical_or(bad_low, bad_high)].tolist()
+                print(
+                    "[SAFETY_BOX] warning key pose outside configured xyz bounds "
+                    f"axes={clipped_axes} "
+                    f"need_low={np.round(need_low_xyz, 4).tolist()} "
+                    f"need_high={np.round(need_high_xyz, 4).tolist()} "
+                    f"cfg_low={np.round(cur_low, 4).tolist()} "
+                    f"cfg_high={np.round(cur_high, 4).tolist()}"
+                )
 
     def clip_safety_box(self, pose: np.ndarray) -> np.ndarray:
         pose = np.array(pose, dtype=np.float64).copy()
@@ -433,6 +604,18 @@ class TianjiEnv(gym.Env):
         
         # 使用修复后的 clip_safety_box 过滤后再发送给 IK
         safe_target = self.clip_safety_box(self.nextpos)
+        if self.debug_safety_clip:
+            delta = safe_target - self.nextpos
+            if np.max(np.abs(delta)) > 1e-9:
+                names = np.array(["x", "y", "z", "rx", "ry", "rz"])
+                clipped = names[np.abs(delta) > 1e-9].tolist()
+                print(
+                    "[SAFETY_CLIP] clipped="
+                    f"{clipped} next={np.round(self.nextpos, 4).tolist()} "
+                    f"safe={np.round(safe_target, 4).tolist()} "
+                    f"low={np.round(self.xyz_bounding_box.low.tolist() + self.rpy_bounding_box.low.tolist(), 4).tolist()} "
+                    f"high={np.round(self.xyz_bounding_box.high.tolist() + self.rpy_bounding_box.high.tolist(), 4).tolist()}"
+                )
         # 【关键修复】：必须将 cmd_pose 强制对齐到 safe_target！
         # 彻底解决碰到边界后“积分饱和”导致按键失灵的问题
         self.cmd_pose = safe_target.copy()
@@ -511,59 +694,159 @@ class TianjiEnv(gym.Env):
         return images
 
     def interpolate_move(self, goal: np.ndarray, timeout: float, is_reset=False):
-        steps = max(2, int(timeout * self.hz))
+        rate_hz = max(1.0, float(self.interpolate_hz))
+        steps_guess = max(2, int(np.ceil(timeout * rate_hz)))
+        steps = max(2, int(np.ceil(timeout * rate_hz)))
         self._update_currpos()
-        path = np.linspace(self.currpos, goal, steps)
+        if self.interpolate_ease:
+            u = np.linspace(0.0, 1.0, steps)
+            s = 0.5 - 0.5 * np.cos(np.pi * u)  # smoothstep-like ease in/out
+            path = self.currpos[None, :] + (goal - self.currpos)[None, :] * s[:, None]
+        else:
+            path = np.linspace(self.currpos, goal, steps)
+        period = 1.0 / rate_hz
+        next_tick = time.perf_counter()
         for p in path:
             self._send_pos_command(p, is_reset=is_reset)
             self._update_currpos()
+            next_tick += period
+            sleep_dt = max(0.0, next_tick - time.perf_counter())
+            if sleep_dt > 0:
+                time.sleep(sleep_dt)
         self.nextpos = path[-1]
         self._update_currpos()
 
-    def go_to_reset(self, joint_reset=False, replay_start_pose=None):
-        """
-        Move to the rest position defined in base class.
-        Add a small z offset before going to rest to avoid collision with object.
-        """     
-        # use compliance mode for coupled reset
-        self._update_currpos()
-        self._send_pos_command(self.currpos, is_reset=True)
-        time.sleep(0.3)
+    def interpolate_joint_move(self, target_joints_deg: np.ndarray, timeout: float = 2.0):
+        """纯关节空间的平滑移动，完全绕过逆运动学，杜绝抽搐！"""
+        rate_hz = max(1.0, float(self.interpolate_hz))
+        steps_guess = max(2, int(np.ceil(timeout * rate_hz)))
+        if self.fake_env:
+            return
 
-        # pull up (改为插值平滑上升，避免瞬间抽动)
-        self._update_currpos()
-        reset_pose = copy.deepcopy(self.currpos)
-        reset_pose[2] = reset_pose[2] + 0.07
-        self.interpolate_move(reset_pose, timeout=0.5, is_reset=True)
-        self._update_currpos()
+        target = np.array(target_joints_deg, dtype=np.float64).reshape(-1)
+        if target.shape[0] != 7:
+            print(f"Invalid target joint shape: {target.shape}, expected (7,)")
+            return
+
+        rate_hz = max(1.0, float(self.interpolate_hz))
         
+        # 获取当前的左右臂关节角度
+        current_ql = self.controller.get_joint_pos_rad(arm_id=1) / self.controller.DEG_TO_RAD
+        current_qr = self.controller.get_joint_pos_rad(arm_id=2) / self.controller.DEG_TO_RAD
+        # self._debug_log(
+        #     f"interpolate_joint_move start steps~{steps_guess} timeout={timeout:.2f}s "
+        #     f"target_qr[:3]={np.round(target[:3], 3).tolist()}"
+        # )
+        self._debug_append_joint_sample(
+            tag="interp_start",
+            target_qr=target,
+            ql_deg=np.array(current_ql, dtype=np.float64),
+            qr_deg=np.array(current_qr, dtype=np.float64),
+        )
+
+        # 目标与当前几乎一致时直接跳过，避免重复发同点指令导致偶发抖动
+        if np.max(np.abs(current_qr - target)) < 1e-3:
+            self._update_currpos()
+            self.cmd_pose = self.currpos.copy()
+            self._mark_ik_seed_refresh("interpolate_joint_move skip_same_target")
+            self._debug_append_joint_sample(tag="interp_skip_same_target", target_qr=target)
+            self._debug_dump_recent_joint(reason="interpolate_joint_move skip", window=3)
+            return
+
+        # 自适应步数：同时考虑总时长与单关节最大步进角，减少“每拍跨太大”导致的卡顿
+        max_delta_deg = float(np.max(np.abs(target - current_qr)))
+        step_cap_deg = max(1e-3, float(self.interpolate_max_step_deg))
+        steps_by_timeout = int(np.ceil(timeout * rate_hz))
+        steps_by_delta = int(np.ceil(max_delta_deg / step_cap_deg))
+        steps = max(2, steps_by_timeout, steps_by_delta)
+
+        # 在关节空间生成插值轨迹
+        if self.interpolate_ease:
+            u = np.linspace(0.0, 1.0, steps)
+            s = 0.5 - 0.5 * np.cos(np.pi * u)  # ease in/out
+            path_r = current_qr[None, :] + (target - current_qr)[None, :] * s[:, None]
+        else:
+            path_r = np.linspace(current_qr, target, steps)
+
+        period = 1.0 / rate_hz
+        next_tick = time.perf_counter()
+        for pr in path_r:
+            self._debug_append_joint_sample(tag="interp_cmd", target_qr=pr)
+            self.controller.step(
+                np.array(current_ql, dtype=np.float64),
+                np.array(pr, dtype=np.float64),
+                verbose=False
+            )
+            next_tick += period
+            sleep_dt = max(0.0, next_tick - time.perf_counter())
+            if sleep_dt > 0:
+                time.sleep(sleep_dt)
+            self._debug_append_joint_sample(tag="interp_fb", target_qr=pr)
+            
+        # 移动完毕后，强制同步底层的真实位置，防止下一轮启动时跳变
+        self._update_currpos()
+        self.cmd_pose = self.currpos.copy()
+        self._mark_ik_seed_refresh("interpolate_joint_move end")
+        self._debug_dump_recent_joint(reason="interpolate_joint_move end", window=3)
+
+    
+    def go_to_reset(self, joint_reset=False, replay_start_pose=None):
+        """安全的宏观复位：纯关节空间移动"""
+        # 1. 先安全退回到插槽正上方 (防止直接复位撞坏主板)
+        if hasattr(self.config, "TOP_JOINTS"):
+            self.interpolate_joint_move(self.config.TOP_JOINTS, timeout=1.5)
+
+        # 2. 如果有轨迹回放的起点，用笛卡尔微调过去
         if replay_start_pose is not None:
             self.interpolate_move(replay_start_pose, timeout=1.0, is_reset=True)
             time.sleep(0.5)
             return
 
-        # perform joint reset if needed
-        if joint_reset:
-            print("JOINT RESET")
-            self._send_joint_command(self._BASIC_JOINT_RESET)
-            time.sleep(0.5)
-            return
+        # 3. 移动到初始待命点
+        if hasattr(self.config, "RESET_JOINTS"):
+            self.interpolate_joint_move(self.config.RESET_JOINTS, timeout=2.0)
+        time.sleep(0.5)
 
-        # perform Cartesian reset
-        reset_pose = self.resetpos.copy()
-        if self.randomreset:  # randomize reset position in xy plane
-            reset_pose[:2] += np.random.uniform(
+        # 4. 最后加上用于数据增强的微小随机偏移 (笛卡尔系)
+        if self.randomreset:
+            random_pose = self.currpos.copy()
+            random_pose[:2] += np.random.uniform(
                 -self.random_xy_range, self.random_xy_range, (2,)
             )
             euler_random = self._RESET_POSE[3:].copy()
             euler_random[-1] += np.random.uniform(
                 -self.random_rz_range, self.random_rz_range
             )
-            reset_pose[3:] = euler_random
-            
-        # 【关键修复】：使用 interpolate_move 平滑移动到复位点，不要用 _send_pos_command 硬跳
-        self.interpolate_move(reset_pose, timeout=1.0, is_reset=True)
+            random_pose[3:] = euler_random
+            self.interpolate_move(random_pose, timeout=1.0, is_reset=True)
+            time.sleep(0.5)
+
+    def quick_regrasp(self):
+        """全自动流水线抓取：纯关节空间移动"""
+        print("[自动复位] 张开夹爪...")
+        self._gripper_control(False)
+        time.sleep(1.0)
+
+        print("[自动复位] 向上拔出到安全点...")
+        if hasattr(self.config, "TOP_JOINTS"):
+            self.interpolate_joint_move(self.config.TOP_JOINTS, timeout=1.5)
         time.sleep(0.5)
+
+        print("[自动复位] 下降到抓取点...")
+        if hasattr(self.config, "TARGET_JOINTS"):
+            self.interpolate_joint_move(self.config.TARGET_JOINTS, timeout=1.5)
+        time.sleep(0.5)
+
+        print("[自动复位] 闭合夹爪...")
+        self._gripper_control(True)
+        self.last_gripper_act = time.time()
+        time.sleep(1.5)
+
+        print("[自动复位] 抓取完毕，提起到安全点...")
+        if hasattr(self.config, "TOP_JOINTS"):
+            self.interpolate_joint_move(self.config.TOP_JOINTS, timeout=1.5)
+        time.sleep(0.5)
+        
 
     def reset(self, joint_reset=False, replay_start_pose=None, **kwargs):
         self.last_gripper_act = time.time()
@@ -673,6 +956,7 @@ class TianjiEnv(gym.Env):
             verbose=False,
         )
         self._update_currpos()
+        self._mark_ik_seed_refresh("_send_joint_command")
         return 0 if ok else -1
 
     def _gripper_control(self, cmd: bool):
@@ -752,15 +1036,25 @@ class TianjiEnv(gym.Env):
             head_pose_xyzwxyz[2] += self.head_z_offset
 
             current_cfg = list(self.body_waist_q) + list(current_qr) + list(current_ql)
+            force_seed_from_current = bool(self._ik_need_seed_refresh)
+            if force_seed_from_current and hasattr(self.full_ik_solver, "sync_with_current_cfg"):
+                self.full_ik_solver.sync_with_current_cfg(
+                    current_cfg[2:], reset_delta_reference=True
+                )
+                ik_seed_cfg = None
+            else:
+                ik_seed_cfg = current_cfg[2:]
             solver_cfg, _ = self.full_ik_solver.compute_ik(
-                current_cfg[2:],
+                ik_seed_cfg,
                 head_pose_xyzwxyz,
                 right_pose_xyzwxyz,
                 left_pose_xyzwxyz,
+                force_seed_from_current=force_seed_from_current,
             )
 
             if solver_cfg is None:
                 return -1
+            self._ik_need_seed_refresh = False
 
             solver_cfg = np.concatenate([current_cfg[:2], solver_cfg])
             qr_target = solver_cfg[2:9]
@@ -768,8 +1062,15 @@ class TianjiEnv(gym.Env):
 
             joint_cmd_left = np.array(ql_target / self.controller.DEG_TO_RAD, dtype=np.float64)
             joint_cmd_right = np.array(qr_target / self.controller.DEG_TO_RAD, dtype=np.float64)
+            self._debug_append_joint_sample(
+                tag="ik_cmd",
+                target_qr=joint_cmd_right,
+                ql_deg=np.array(current_ql / self.controller.DEG_TO_RAD, dtype=np.float64),
+                qr_deg=np.array(current_qr / self.controller.DEG_TO_RAD, dtype=np.float64),
+            )
 
             ok = self.controller.step(joint_cmd_left, joint_cmd_right, verbose=False)
+            self._debug_append_joint_sample(tag="ik_fb", target_qr=joint_cmd_right)
             return 0 if ok else -1
         except Exception as e:
             print(f"Failed to solve/send Tianji IK: {e}")
