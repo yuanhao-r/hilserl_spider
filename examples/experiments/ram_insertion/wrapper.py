@@ -117,6 +117,63 @@ class RAMEnv(BaseRAMRobotEnv):
                 reset_pose = self.resetpos.copy()
                 self._send_pos_command(reset_pose, is_reset=True)
 
+            # 天机分支随机化：在 RESET_JOINTS 到位后做笛卡尔微扰，便于 RL 数据增强
+            if self.randomreset:
+                self._update_currpos()
+                base_pose = self.currpos.copy()
+                random_pose = base_pose.copy()
+
+                xy_range = float(getattr(self.config, "RANDOM_XY_RANGE", self.random_xy_range))
+                x_range = float(getattr(self.config, "RANDOM_X_RANGE", xy_range))
+                y_range = float(getattr(self.config, "RANDOM_Y_RANGE", xy_range))
+                z_range = float(getattr(self.config, "RANDOM_Z_RANGE", 0.0))
+                rz_range = float(getattr(self.config, "RANDOM_RZ_RANGE", self.random_rz_range))
+                keep_ori = bool(getattr(self.config, "RANDOM_KEEP_TOOL_ORIENTATION", True))
+                random_timeout = float(getattr(self.config, "RANDOM_RESET_TIMEOUT", 1.0))
+                x_bias = float(getattr(self.config, "RANDOM_X_BIAS", 0.0))
+                y_bias = float(getattr(self.config, "RANDOM_Y_BIAS", 0.0))
+                z_bias = float(getattr(self.config, "RANDOM_Z_BIAS", 0.0))
+
+                dx_min_cfg = getattr(self.config, "RANDOM_DX_MIN", None)
+                dx_max_cfg = getattr(self.config, "RANDOM_DX_MAX", None)
+                dy_min_cfg = getattr(self.config, "RANDOM_DY_MIN", None)
+                dy_max_cfg = getattr(self.config, "RANDOM_DY_MAX", None)
+                dz_min_cfg = getattr(self.config, "RANDOM_DZ_MIN", None)
+                dz_max_cfg = getattr(self.config, "RANDOM_DZ_MAX", None)
+
+                dx_min = -x_range if dx_min_cfg is None else float(dx_min_cfg)
+                dx_max = x_range if dx_max_cfg is None else float(dx_max_cfg)
+                dy_min = -y_range if dy_min_cfg is None else float(dy_min_cfg)
+                dy_max = y_range if dy_max_cfg is None else float(dy_max_cfg)
+                dz_min = -z_range if dz_min_cfg is None else float(dz_min_cfg)
+                dz_max = z_range if dz_max_cfg is None else float(dz_max_cfg)
+
+                if dx_min > dx_max:
+                    dx_min, dx_max = dx_max, dx_min
+                if dy_min > dy_max:
+                    dy_min, dy_max = dy_max, dy_min
+                if dz_min > dz_max:
+                    dz_min, dz_max = dz_max, dz_min
+
+                random_pose[0] += np.random.uniform(dx_min, dx_max) + x_bias
+                random_pose[1] += np.random.uniform(dy_min, dy_max) + y_bias
+                random_pose[2] += np.random.uniform(dz_min, dz_max) + z_bias
+                if not keep_ori:
+                    random_pose[5] += np.random.uniform(-rz_range, rz_range)
+
+                random_pose = self.clip_safety_box(random_pose)
+                delta_mm = (random_pose[:3] - base_pose[:3]) * 1000.0
+                print(
+                    "[自动复位] 随机化初始化位姿 "
+                    f"Δx={delta_mm[0]:.1f}mm Δy={delta_mm[1]:.1f}mm Δz={delta_mm[2]:.1f}mm "
+                    f"keep_ori={keep_ori}"
+                )
+                self.interpolate_move(
+                    random_pose,
+                    timeout=max(0.2, random_timeout),
+                    is_reset=True,
+                )
+
             time.sleep(0.5)
             return
 

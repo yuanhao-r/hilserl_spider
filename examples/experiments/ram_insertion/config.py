@@ -47,7 +47,7 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
                 "dim": (1280, 720),
             },
             "wrist_2": {
-                "camera_index": 12,
+                "camera_index": 4,
                 "dim": (1280, 720),
             },
         }
@@ -64,15 +64,15 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
         RESET_POSE_MM = np.zeros((6,), dtype=np.float64)
 
         # 1. 抓取点 / 插入完成点 (使用你测试过的坐标)
-        TARGET_JOINTS = np.array([-8.655314,-70.119028,-80.595401,-48.706882,49.187142,-19.077660,26.062595], dtype=np.float64)
+        TARGET_JOINTS = np.array([14.235408,13.679455,-10.149516,-87.121804,-1.975588,-16.469359,7.192518], dtype=np.float64)
         # GRASP_JOINTS = np.array([-8.655314,-70.119028,-80.595401,-48.706882,49.187142,-19.077660,26.062595], dtype=np.float64)
         
         # 2. 抓取点正上方 (请务必用示教器把机械臂提起到内存槽正上方，并把那时的关节角填到这里！)
         # (这里暂时填的复位点做示范，请一定修改为你实际的正上方安全点)
-        TOP_JOINTS = np.array([13.037354,-69.353395,-87.958374,-69.635683,50.185998,-18.033283,26.141799], dtype=np.float64)
+        TOP_JOINTS = np.array([-48.876438,19.113743,50.679637,-83.718879,15.972007,-18.156286,8.635611], dtype=np.float64)
         
         # 3. 初始复位待命点
-        RESET_JOINTS = np.array([14.371310,-68.838821,-88.439945,-72.759672,49.257913,-16.950136,24.544802], dtype=np.float64)
+        RESET_JOINTS = np.array([-28.387604,18.155519,32.549613,-82.773040,16.131870,-25.223186,5.343436], dtype=np.float64)
 
 
         TARGET_POSE = TARGET_POSE_MM.copy()
@@ -87,15 +87,34 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
         # 2) 姿态被夹到边界后出现倾斜
         # 3) SpaceMouse 往回拉时被边界限制
         ABS_POSE_LIMIT_LOW = np.array(
-            [0.15, -3.30, 0.30, -np.pi, -np.pi, -np.pi], dtype=np.float64
+            [0.7505, -0.3323, 0.5230, -np.pi, -np.pi, -np.pi], dtype=np.float64
         )
         ABS_POSE_LIMIT_HIGH = np.array(
-            [3.80, 3.30, 3.35, np.pi, np.pi, np.pi], dtype=np.float64
+            [0.8005, -0.2923, 0.6230, np.pi, np.pi, np.pi], dtype=np.float64
         )
         REWARD_THRESHOLD = 0.001
         RANDOM_RESET = True
+        # 兼容旧参数：若未配置 RANDOM_X_RANGE/Y_RANGE，则沿用 RANDOM_XY_RANGE
         RANDOM_XY_RANGE = 0.03
+        # 推荐使用按轴独立随机范围，便于避开“前方柱子”
+        RANDOM_X_RANGE = 0.02
+        RANDOM_Y_RANGE = 0.01
+        RANDOM_Z_RANGE = 0.0
+        # 可选：定向限制（单位 m）
+        # 例如若“向前”为 +x，可把 RANDOM_DX_MAX 设小一些，减少前探碰撞
+        RANDOM_DX_MIN = -0.02
+        RANDOM_DX_MAX = 0.005
+        RANDOM_DY_MIN = -0.01
+        RANDOM_DY_MAX = 0.01
+        RANDOM_DZ_MIN = 0.0
+        RANDOM_DZ_MAX = 0.0
+        # 可选：整体偏置（单位 m）
+        RANDOM_X_BIAS = 0.0
+        RANDOM_Y_BIAS = 0.0
+        RANDOM_Z_BIAS = 0.0
         RANDOM_RZ_RANGE = 0.0
+        RANDOM_KEEP_TOOL_ORIENTATION = True
+        RANDOM_RESET_TIMEOUT = 1.0
         AUTO_QUICK_REGRASP = True
         # RL 探索速度（平移、旋转、夹爪）
         ACTION_SCALE = (0.005, 0.0, 1)
@@ -105,6 +124,8 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
         # 调试日志开关（强制关闭 TWITCH 日志）
         DEBUG_TWITCH = False
         DEBUG_TWITCH_RING = 80
+        # 打印 SpaceMouse 轴映射（只打印一次）
+        DEBUG_SPACEMOUSE_AXIS_MAP = True
         # 夹爪时序：第一轮等待更久，避免未完全张开就下探
         GRIPPER_OPEN_WAIT_SEC = 1.0
         FIRST_ROUND_GRIPPER_OPEN_WAIT_SEC = 2.8

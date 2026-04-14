@@ -265,20 +265,47 @@ class SpacemouseIntervention(gym.ActionWrapper):
             os.environ.get("HILSERL_SPACEMOUSE_ANGULAR_SCALE", expert_angular_scale)
         )
         env_debug_twitch = bool(int(os.environ.get("HILSERL_DEBUG_TWITCH", "0")))
+        env_debug_axis_map = bool(
+            int(os.environ.get("HILSERL_DEBUG_SPACEMOUSE_AXIS", "0"))
+        )
         cfg_debug_twitch = None
+        cfg_debug_axis_map = None
         try:
             base_env = self.env.unwrapped
-            cfg_debug_twitch = getattr(getattr(base_env, "config", None), "DEBUG_TWITCH", None)
+            cfg = getattr(base_env, "config", None)
+            cfg_debug_twitch = getattr(cfg, "DEBUG_TWITCH", None)
+            cfg_debug_axis_map = getattr(cfg, "DEBUG_SPACEMOUSE_AXIS_MAP", None)
         except Exception:
             cfg_debug_twitch = None
+            cfg_debug_axis_map = None
         self.debug_twitch = (
             env_debug_twitch if cfg_debug_twitch is None else bool(cfg_debug_twitch)
         )
+        self.debug_spacemouse_axis_map = (
+            env_debug_axis_map
+            if cfg_debug_axis_map is None
+            else bool(cfg_debug_axis_map)
+        )
+        self._axis_map_printed = False
         
         self.pause_control = False
         self.listener = keyboard.Listener(
             on_press=self.on_press)
         self.listener.start()
+
+    def _maybe_print_axis_map(self):
+        if (not self.debug_spacemouse_axis_map) or self._axis_map_printed:
+            return
+        print(
+            "[SPACEMOUSE_MAP] single-device raw->cmd: "
+            "cmd_x=raw_y, cmd_y=-raw_x, cmd_z=raw_z, "
+            "cmd_rx=raw_roll, cmd_ry=raw_pitch, cmd_rz=-raw_yaw"
+        )
+        print(
+            "[SPACEMOUSE_MAP] 外层 RelativeFrame 会再把 cmd 从末端坐标系变换到基座坐标系；"
+            "所以最终 base xyz 方向会随当前末端姿态变化。"
+        )
+        self._axis_map_printed = True
         
     def on_press(self, key):
         try:
@@ -299,6 +326,7 @@ class SpacemouseIntervention(gym.ActionWrapper):
         Output:
         - action: spacemouse action if nonezero; else, policy action
         """
+        self._maybe_print_axis_map()
         expert_a, buttons = self.expert.get_action()
         self.left, self.right = tuple(buttons)
         expert_a = _apply_deadband(expert_a, self.deadband)
