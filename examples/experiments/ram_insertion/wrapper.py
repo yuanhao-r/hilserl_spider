@@ -293,9 +293,22 @@ class RAMEnv(BaseRAMRobotEnv):
 
             print("[自动复位] 抓取完毕，提起到安全点...")
             if hasattr(self.config, "TOP_JOINTS"):
-                self.interpolate_joint_move(
-                    np.array(self.config.TOP_JOINTS, dtype=np.float64), timeout=1.5
-                )
+                linear_lift = bool(getattr(self.config, "LINEAR_LIFT_TARGET_TO_TOP", True))
+                linear_timeout = float(getattr(self.config, "LINEAR_LIFT_TIMEOUT", 1.5))
+                if linear_lift and hasattr(self, "_joints_deg_to_pose6"):
+                    # 改为笛卡尔直线插值：使 TARGET_JOINTS -> TOP_JOINTS 的末端路径更接近直线
+                    top_pose = self._joints_deg_to_pose6(
+                        np.array(self.config.TOP_JOINTS, dtype=np.float64)
+                    )
+                    self.interpolate_move(
+                        np.array(top_pose, dtype=np.float64),
+                        timeout=max(0.2, linear_timeout),
+                        is_reset=True,
+                    )
+                else:
+                    self.interpolate_joint_move(
+                        np.array(self.config.TOP_JOINTS, dtype=np.float64), timeout=1.5
+                    )
             else:
                 top_pose = self._GRASP_POSE.copy()
                 top_pose[2] += 0.1

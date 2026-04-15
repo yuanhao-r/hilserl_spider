@@ -6263,3 +6263,163 @@
 [04/14 11:07:34.727166][info][2690638][SensorBase.cpp:370] [CPCV5530014V] Depth Streaming... frameRate=29.964043fps
 [04/14 11:07:35.140481][info][2690521][VideoSensor.cpp:153] [CPCV5530014V] Color backend frame callback, frameRate=29.964043fps
 [04/14 11:07:35.141585][info][2691091][SensorBase.cpp:370] [CPCV5530014V] Color Streaming... frameRate=29.964043fps
+[04/14 19:53:25.858720][error][581131][UsbEnumeratorLibusb.cpp:166] Failed to get string descriptor 3: error=Operation timed out
+[04/14 19:53:25.858764][error][581131][UsbEnumeratorLibusb.cpp:436] Failed to query USB device interface name. SN: CPCV5530014V
+[04/14 19:53:25.859746][info][581131][LinuxUsbPal.cpp:335] Create PollingDeviceWatcher!
+[04/14 19:53:25.859766][info][581131][DeviceManager.cpp:25] Current found device(s): (1)
+[04/14 19:53:25.859771][info][581131][DeviceManager.cpp:34] 	- Name: Gemini 336L, PID: 0x0807, SN/ID: CPCV5530014V, Connection: USB2.1
+[04/14 19:53:25.859775][info][581131][DeviceManager.cpp:339] Enable net device enumeration: true
+[04/14 19:53:27.863825][info][581131][DeviceManager.cpp:25] Current device(s) list: (1)
+[04/14 19:53:27.863859][info][581131][DeviceManager.cpp:34] 	- Name: Gemini 336L, PID: 0x0807, SN/ID: CPCV5530014V, Connection: USB2.1
+[04/14 19:53:27.866130][info][581131][DeviceBase.cpp:651] key: AppSlot,value:2
+[04/14 19:53:27.866142][info][581131][DeviceBase.cpp:651] key: HwType,value:L2
+[04/14 19:53:27.866147][info][581131][DeviceBase.cpp:651] key: HwVer,value:V1.1
+[04/14 19:53:27.866150][info][581131][DeviceBase.cpp:651] key: IspFwVer,value:20241125
+[04/14 19:53:27.866153][info][581131][DeviceBase.cpp:651] key: IspNeedVer,value:20241125
+[04/14 19:53:27.866157][info][581131][DeviceBase.cpp:651] key: PresetVer,value:1.1.9
+[04/14 19:53:28.026910][info][581131][DeviceManager.cpp:194] Device created successfully! Name: Gemini 336L, PID: 0x0807, SN/ID: CPCV5530014V FW: 1.4.60
+[04/14 19:53:28.026953][info][581131][Pipeline.cpp:42] [CPCV5530014V] Pipeline created with device: {name: Gemini 336L, sn: CPCV5530014V}, @0x24310BE0
+[04/14 19:53:28.036274][info][581131][Pipeline.cpp:216] [CPCV5530014V] Check and set config done!
+[04/14 19:53:28.036487][info][581131][Pipeline.cpp:254] [CPCV5530014V] Try to start streams!
+[04/14 19:53:28.036492][info][581131][VideoSensor.cpp:58] [CPCV5530014V] Try to start stream: {type: Color, format: RGB, width: 640, height: 480, fps: 30}
+[04/14 19:53:28.036498][info][581131][SensorBase.cpp:213] [CPCV5530014V] Stream state changed to STARTING@Color
+[04/14 19:53:28.036501][info][581131][VideoSensor.cpp:127] [CPCV5530014V] Start backend stream: {type: Color, format: YUYV, width: 640, height: 480, fps: 30}
+[04/14 19:53:28.037339][info][581131][VideoSensor.cpp:58] [CPCV5530014V] Try to start stream: {type: Depth, format: Y16, width: 848, height: 480, fps: 10}
+[04/14 19:53:28.037348][info][581131][SensorBase.cpp:213] [CPCV5530014V] Stream state changed to STARTING@Depth
+[04/14 19:53:28.037351][info][581131][VideoSensor.cpp:127] [CPCV5530014V] Start backend stream: {type: Depth, format: Z16, width: 848, height: 480, fps: 10}
+[04/14 19:53:28.038186][info][581131][Pipeline.cpp:270] [CPCV5530014V] Start streams done!
+[04/14 19:53:28.038189][info][581131][Pipeline.cpp:238] [CPCV5530014V] Pipeline start done!
+[04/14 19:53:28.138321][warning][581131][Pipeline.cpp:305] [CPCV5530014V] Wait for frame timeout, you can try to increase the wait time! current timeout=100
+[04/14 19:53:28.340403][info][594919][DeviceManager.cpp:266] Device changed! removed: 1, added: 0
+[04/14 19:53:28.340458][warning][594919][DeviceBase.cpp:200] Device is deactivated or disconnected while there are still sensors streaming!
+[04/14 19:53:28.340544][info][594919][SensorBase.cpp:213] [CPCV5530014V] Stream state changed to STOPPING@Color
+[04/14 19:53:28.340604][warning][594919][ObException.cpp:8] Device is deactivated/disconnected!
+[04/14 19:53:28.341074][warning][594919][VideoSensor.cpp:245] [CPCV5530014V] Failed to send stop stream vendor command: Device is deactivated/disconnected!
+[04/14 19:53:28.341088][info][594919][SensorBase.cpp:213] [CPCV5530014V] Stream state changed to STOPPED@Color
+[04/14 19:53:28.341111][info][594919][SensorBase.cpp:47] [CPCV5530014V] SensorBase is destroyed
+[04/14 19:53:28.341141][info][594919][ObLibuvcDevicePort.cpp:87] uvc_close done.
+[04/14 19:53:28.341142][info][594919][ObLibuvcDevicePort.cpp:88] ~ObLibuvcDevicePort done
+[04/14 19:53:28.341148][info][594919][SensorBase.cpp:213] [CPCV5530014V] Stream state changed to STOPPING@Depth
+[04/14 19:53:28.341184][warning][594919][ObException.cpp:8] Device is deactivated/disconnected!
+[04/14 19:53:28.341190][warning][594919][VideoSensor.cpp:245] [CPCV5530014V] Failed to send stop stream vendor command: Device is deactivated/disconnected!
+[04/14 19:53:28.341192][info][594919][SensorBase.cpp:213] [CPCV5530014V] Stream state changed to STOPPED@Depth
+[04/14 19:53:28.341217][info][594919][SensorBase.cpp:47] [CPCV5530014V] SensorBase is destroyed
+[04/14 19:53:28.341261][info][594919][ObLibuvcDevicePort.cpp:87] uvc_close done.
+[04/14 19:53:28.341262][info][594919][ObLibuvcDevicePort.cpp:88] ~ObLibuvcDevicePort done
+[04/14 19:53:28.341344][info][594919][DeviceManager.cpp:25] Removed device(s) list: (1)
+[04/14 19:53:28.341347][info][594919][DeviceManager.cpp:34] 	- Name: Gemini 336L, PID: 0x0807, SN/ID: CPCV5530014V, Connection: USB2.1
+[04/14 19:53:28.341350][info][594919][DeviceManager.cpp:25] Current device(s) list: (0)
+[04/14 19:53:30.632666][warning][592274][UsbEnumeratorLibusb.cpp:399] Failed to open USB device: error=Access denied (insufficient permissions). Try again
+[04/14 19:53:30.682766][warning][592274][UsbEnumeratorLibusb.cpp:403] Failed to open USB device (Access denied (insufficient permissions)), skipping, info.serial and infName may be empty
+[04/14 19:53:30.683036][info][597368][DeviceManager.cpp:266] Device changed! removed: 0, added: 1
+[04/14 19:53:30.683056][info][597368][DeviceManager.cpp:25] Current device(s) list: (1)
+[04/14 19:53:30.683062][info][597368][DeviceManager.cpp:34] 	- Name: Gemini 336L, PID: 0x0807, SN/ID: , Connection: USB2.1
+[04/14 19:53:31.238545][warning][594811][Pipeline.cpp:305] [CPCV5530014V] Wait for frame timeout, you can try to increase the wait time! current timeout=100 [**29 logs in 3100ms, last: 19:53:31.040946**]
+[04/14 19:53:38.041357][warning][598777][Pipeline.cpp:305] [CPCV5530014V] Wait for frame timeout, you can try to increase the wait time! current timeout=1000 [**5 logs in 6802ms, last: 19:53:36.591766**]
+[04/14 19:53:50.091964][warning][605074][Pipeline.cpp:305] [CPCV5530014V] Wait for frame timeout, you can try to increase the wait time! current timeout=1500 [**11 logs in 12050ms, last: 19:53:49.819069**]
+[04/14 19:54:01.626717][info][581131][Pipeline.cpp:336] [CPCV5530014V] Try to stop pipeline!
+[04/14 19:54:01.626748][info][581131][Pipeline.cpp:312] [CPCV5530014V] Try to stop streams!
+[04/14 19:54:01.626755][warning][581131][ObException.cpp:8] Device is deactivated/disconnected!
+[04/14 19:54:03.020369][info][581131][Pipeline.cpp:336] [CPCV5530014V] Try to stop pipeline!
+[04/14 19:54:03.020412][info][581131][Pipeline.cpp:312] [CPCV5530014V] Try to stop streams!
+[04/14 19:54:03.020421][warning][581131][ObException.cpp:8] Device is deactivated/disconnected!
+[04/14 19:54:03.240702][info][581131][DeviceBase.cpp:651] key: AppSlot,value:2
+[04/14 19:54:03.240720][info][581131][DeviceBase.cpp:651] key: HwType,value:L2
+[04/14 19:54:03.240724][info][581131][DeviceBase.cpp:651] key: HwVer,value:V1.1
+[04/14 19:54:03.240728][info][581131][DeviceBase.cpp:651] key: IspFwVer,value:20241125
+[04/14 19:54:03.240731][info][581131][DeviceBase.cpp:651] key: IspNeedVer,value:20241125
+[04/14 19:54:03.240734][info][581131][DeviceBase.cpp:651] key: PresetVer,value:1.1.9
+[04/14 19:54:03.401155][info][581131][DeviceManager.cpp:194] Device created successfully! Name: Gemini 336L, PID: 0x0807, SN/ID: CPCV5530014V FW: 1.4.60
+[04/14 19:54:03.401190][info][581131][Pipeline.cpp:42] [CPCV5530014V] Pipeline created with device: {name: Gemini 336L, sn: CPCV5530014V}, @0x2B7B26B0
+[04/14 19:54:03.411189][info][581131][Pipeline.cpp:216] [CPCV5530014V] Check and set config done!
+[04/14 19:54:03.411417][info][581131][Pipeline.cpp:254] [CPCV5530014V] Try to start streams!
+[04/14 19:54:03.411429][info][581131][VideoSensor.cpp:58] [CPCV5530014V] Try to start stream: {type: Color, format: RGB, width: 640, height: 480, fps: 30}
+[04/14 19:54:03.411442][info][581131][SensorBase.cpp:213] [CPCV5530014V] Stream state changed to STARTING@Color
+[04/14 19:54:03.411450][info][581131][VideoSensor.cpp:127] [CPCV5530014V] Start backend stream: {type: Color, format: YUYV, width: 640, height: 480, fps: 30}
+[04/14 19:54:03.412719][info][581131][VideoSensor.cpp:58] [CPCV5530014V] Try to start stream: {type: Depth, format: Y16, width: 848, height: 480, fps: 10}
+[04/14 19:54:03.412735][info][581131][SensorBase.cpp:213] [CPCV5530014V] Stream state changed to STARTING@Depth
+[04/14 19:54:03.412742][info][581131][VideoSensor.cpp:127] [CPCV5530014V] Start backend stream: {type: Depth, format: Z16, width: 848, height: 480, fps: 10}
+[04/14 19:54:03.414002][info][581131][Pipeline.cpp:270] [CPCV5530014V] Start streams done!
+[04/14 19:54:03.414016][info][581131][Pipeline.cpp:238] [CPCV5530014V] Pipeline start done!
+[04/14 19:54:03.514192][warning][581131][Pipeline.cpp:305] [CPCV5530014V] Wait for frame timeout, you can try to increase the wait time! current timeout=100
+[04/14 19:54:03.658268][info][632098][DeviceManager.cpp:266] Device changed! removed: 1, added: 0
+[04/14 19:54:03.658308][warning][632098][DeviceBase.cpp:200] Device is deactivated or disconnected while there are still sensors streaming!
+[04/14 19:54:03.658397][info][632098][SensorBase.cpp:213] [CPCV5530014V] Stream state changed to STOPPING@Color
+[04/14 19:54:03.658873][warning][632098][ObException.cpp:8] Device is deactivated/disconnected!
+[04/14 19:54:03.658912][warning][632098][VideoSensor.cpp:245] [CPCV5530014V] Failed to send stop stream vendor command: Device is deactivated/disconnected!
+[04/14 19:54:03.658920][info][632098][SensorBase.cpp:213] [CPCV5530014V] Stream state changed to STOPPED@Color
+[04/14 19:54:03.658952][info][632098][SensorBase.cpp:47] [CPCV5530014V] SensorBase is destroyed
+[04/14 19:54:03.658992][info][632098][ObLibuvcDevicePort.cpp:87] uvc_close done.
+[04/14 19:54:03.659003][info][632098][ObLibuvcDevicePort.cpp:88] ~ObLibuvcDevicePort done
+[04/14 19:54:03.659011][info][632098][SensorBase.cpp:213] [CPCV5530014V] Stream state changed to STOPPING@Depth
+[04/14 19:54:03.659145][warning][632098][ObException.cpp:8] Device is deactivated/disconnected!
+[04/14 19:54:03.659161][warning][632098][VideoSensor.cpp:245] [CPCV5530014V] Failed to send stop stream vendor command: Device is deactivated/disconnected!
+[04/14 19:54:03.659164][info][632098][SensorBase.cpp:213] [CPCV5530014V] Stream state changed to STOPPED@Depth
+[04/14 19:54:03.659224][info][632098][SensorBase.cpp:47] [CPCV5530014V] SensorBase is destroyed
+[04/14 19:54:03.660292][info][632098][ObLibuvcDevicePort.cpp:87] uvc_close done.
+[04/14 19:54:03.660308][info][632098][ObLibuvcDevicePort.cpp:88] ~ObLibuvcDevicePort done
+[04/14 19:54:03.660444][info][632098][DeviceManager.cpp:25] Removed device(s) list: (1)
+[04/14 19:54:03.660451][info][632098][DeviceManager.cpp:34] 	- Name: Gemini 336L, PID: 0x0807, SN/ID: , Connection: USB2.1
+[04/14 19:54:03.660455][info][632098][DeviceManager.cpp:25] Current device(s) list: (0)
+[04/14 19:54:05.953551][warning][592274][UsbEnumeratorLibusb.cpp:399] Failed to open USB device: error=Access denied (insufficient permissions). Try again
+[04/14 19:54:06.003600][warning][592274][UsbEnumeratorLibusb.cpp:403] Failed to open USB device (Access denied (insufficient permissions)), skipping, info.serial and infName may be empty
+[04/14 19:54:06.003846][info][634547][DeviceManager.cpp:266] Device changed! removed: 0, added: 1
+[04/14 19:54:06.003866][info][634547][DeviceManager.cpp:25] Current device(s) list: (1)
+[04/14 19:54:06.003871][info][634547][DeviceManager.cpp:34] 	- Name: Gemini 336L, PID: 0x0807, SN/ID: , Connection: USB2.1
+[04/14 19:54:06.614444][warning][632048][Pipeline.cpp:305] [CPCV5530014V] Wait for frame timeout, you can try to increase the wait time! current timeout=100 [**29 logs in 3100ms, last: 19:54:06.416701**]
+[04/14 19:54:13.417075][warning][636016][Pipeline.cpp:305] [CPCV5530014V] Wait for frame timeout, you can try to increase the wait time! current timeout=1000 [**5 logs in 6802ms, last: 19:54:11.967477**]
+[04/14 19:54:14.819250][warning][618637][Pipeline.cpp:305] [CPCV5530014V] Wait for frame timeout, you can try to increase the wait time! current timeout=1000 [**11 logs in 24727ms, last: 19:54:02.970212**]
+[04/15 13:43:01.056832][error][2625430][UsbEnumeratorLibusb.cpp:166] Failed to get string descriptor 3: error=Operation timed out
+[04/15 13:43:01.056873][error][2625430][UsbEnumeratorLibusb.cpp:436] Failed to query USB device interface name. SN: CPCV5530014V
+[04/15 13:43:01.057753][info][2625430][LinuxUsbPal.cpp:335] Create PollingDeviceWatcher!
+[04/15 13:43:01.057769][info][2625430][DeviceManager.cpp:25] Current found device(s): (1)
+[04/15 13:43:01.057773][info][2625430][DeviceManager.cpp:34] 	- Name: Gemini 336L, PID: 0x0807, SN/ID: CPCV5530014V, Connection: USB2.1
+[04/15 13:43:01.057777][info][2625430][DeviceManager.cpp:339] Enable net device enumeration: true
+[04/15 13:43:03.062057][info][2625430][DeviceManager.cpp:25] Current device(s) list: (1)
+[04/15 13:43:03.062089][info][2625430][DeviceManager.cpp:34] 	- Name: Gemini 336L, PID: 0x0807, SN/ID: CPCV5530014V, Connection: USB2.1
+[04/15 13:43:03.064492][info][2625430][DeviceBase.cpp:651] key: AppSlot,value:2
+[04/15 13:43:03.064501][info][2625430][DeviceBase.cpp:651] key: HwType,value:L2
+[04/15 13:43:03.064503][info][2625430][DeviceBase.cpp:651] key: HwVer,value:V1.1
+[04/15 13:43:03.064504][info][2625430][DeviceBase.cpp:651] key: IspFwVer,value:20241125
+[04/15 13:43:03.064506][info][2625430][DeviceBase.cpp:651] key: IspNeedVer,value:20241125
+[04/15 13:43:03.064507][info][2625430][DeviceBase.cpp:651] key: PresetVer,value:1.1.9
+[04/15 13:43:03.224454][info][2625430][DeviceManager.cpp:194] Device created successfully! Name: Gemini 336L, PID: 0x0807, SN/ID: CPCV5530014V FW: 1.4.60
+[04/15 13:43:03.224482][info][2625430][Pipeline.cpp:42] [CPCV5530014V] Pipeline created with device: {name: Gemini 336L, sn: CPCV5530014V}, @0x3999C2A0
+[04/15 13:43:03.233191][info][2625430][Pipeline.cpp:216] [CPCV5530014V] Check and set config done!
+[04/15 13:43:03.233388][info][2625430][Pipeline.cpp:254] [CPCV5530014V] Try to start streams!
+[04/15 13:43:03.233392][info][2625430][VideoSensor.cpp:58] [CPCV5530014V] Try to start stream: {type: Color, format: RGB, width: 640, height: 480, fps: 30}
+[04/15 13:43:03.233397][info][2625430][SensorBase.cpp:213] [CPCV5530014V] Stream state changed to STARTING@Color
+[04/15 13:43:03.233400][info][2625430][VideoSensor.cpp:127] [CPCV5530014V] Start backend stream: {type: Color, format: YUYV, width: 640, height: 480, fps: 30}
+[04/15 13:43:03.234298][info][2625430][VideoSensor.cpp:58] [CPCV5530014V] Try to start stream: {type: Depth, format: Y16, width: 848, height: 480, fps: 10}
+[04/15 13:43:03.234308][info][2625430][SensorBase.cpp:213] [CPCV5530014V] Stream state changed to STARTING@Depth
+[04/15 13:43:03.234312][info][2625430][VideoSensor.cpp:127] [CPCV5530014V] Start backend stream: {type: Depth, format: Z16, width: 848, height: 480, fps: 10}
+[04/15 13:43:03.235184][info][2625430][Pipeline.cpp:270] [CPCV5530014V] Start streams done!
+[04/15 13:43:03.235188][info][2625430][Pipeline.cpp:238] [CPCV5530014V] Pipeline start done!
+[04/15 13:43:03.335348][warning][2625430][Pipeline.cpp:305] [CPCV5530014V] Wait for frame timeout, you can try to increase the wait time! current timeout=100
+[04/15 13:43:03.634181][info][2639140][DeviceManager.cpp:266] Device changed! removed: 1, added: 0
+[04/15 13:43:03.634219][warning][2639140][DeviceBase.cpp:200] Device is deactivated or disconnected while there are still sensors streaming!
+[04/15 13:43:03.634287][info][2639140][SensorBase.cpp:213] [CPCV5530014V] Stream state changed to STOPPING@Color
+[04/15 13:43:03.634328][warning][2639140][ObException.cpp:8] Device is deactivated/disconnected!
+[04/15 13:43:03.634479][warning][2639140][VideoSensor.cpp:245] [CPCV5530014V] Failed to send stop stream vendor command: Device is deactivated/disconnected!
+[04/15 13:43:03.634485][info][2639140][SensorBase.cpp:213] [CPCV5530014V] Stream state changed to STOPPED@Color
+[04/15 13:43:03.634513][info][2639140][SensorBase.cpp:47] [CPCV5530014V] SensorBase is destroyed
+[04/15 13:43:03.634547][info][2639140][ObLibuvcDevicePort.cpp:87] uvc_close done.
+[04/15 13:43:03.634550][info][2639140][ObLibuvcDevicePort.cpp:88] ~ObLibuvcDevicePort done
+[04/15 13:43:03.634558][info][2639140][SensorBase.cpp:213] [CPCV5530014V] Stream state changed to STOPPING@Depth
+[04/15 13:43:03.634601][warning][2639140][ObException.cpp:8] Device is deactivated/disconnected!
+[04/15 13:43:03.634612][warning][2639140][VideoSensor.cpp:245] [CPCV5530014V] Failed to send stop stream vendor command: Device is deactivated/disconnected!
+[04/15 13:43:03.634616][info][2639140][SensorBase.cpp:213] [CPCV5530014V] Stream state changed to STOPPED@Depth
+[04/15 13:43:03.634645][info][2639140][SensorBase.cpp:47] [CPCV5530014V] SensorBase is destroyed
+[04/15 13:43:03.634687][info][2639140][ObLibuvcDevicePort.cpp:87] uvc_close done.
+[04/15 13:43:03.634689][info][2639140][ObLibuvcDevicePort.cpp:88] ~ObLibuvcDevicePort done
+[04/15 13:43:03.634791][info][2639140][DeviceManager.cpp:25] Removed device(s) list: (1)
+[04/15 13:43:03.634796][info][2639140][DeviceManager.cpp:34] 	- Name: Gemini 336L, PID: 0x0807, SN/ID: CPCV5530014V, Connection: USB2.1
+[04/15 13:43:03.634799][info][2639140][DeviceManager.cpp:25] Current device(s) list: (0)
+[04/15 13:43:05.921649][warning][2636409][UsbEnumeratorLibusb.cpp:399] Failed to open USB device: error=Access denied (insufficient permissions). Try again
+[04/15 13:43:05.971745][warning][2636409][UsbEnumeratorLibusb.cpp:403] Failed to open USB device (Access denied (insufficient permissions)), skipping, info.serial and infName may be empty
+[04/15 13:43:05.971955][info][2641611][DeviceManager.cpp:266] Device changed! removed: 0, added: 1
+[04/15 13:43:05.971972][info][2641611][DeviceManager.cpp:25] Current device(s) list: (1)
+[04/15 13:43:05.971977][info][2641611][DeviceManager.cpp:34] 	- Name: Gemini 336L, PID: 0x0807, SN/ID: , Connection: USB2.1
+[04/15 13:43:06.435593][warning][2638924][Pipeline.cpp:305] [CPCV5530014V] Wait for frame timeout, you can try to increase the wait time! current timeout=100 [**29 logs in 3100ms, last: 13:43:06.237875**]
+[04/15 13:43:13.238331][warning][2642914][Pipeline.cpp:305] [CPCV5530014V] Wait for frame timeout, you can try to increase the wait time! current timeout=1000 [**5 logs in 6802ms, last: 13:43:11.788795**]
+[04/15 13:43:25.289059][warning][2649216][Pipeline.cpp:305] [CPCV5530014V] Wait for frame timeout, you can try to increase the wait time! current timeout=1500 [**11 logs in 12050ms, last: 13:43:25.034952**]

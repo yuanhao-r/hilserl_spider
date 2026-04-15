@@ -42,10 +42,10 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
             ).resolve()
         )
         REALSENSE_CAMERAS = {
-            "wrist_1": {
-                "camera_type": "orbbec",
-                "dim": (1280, 720),
-            },
+            # "wrist_1": {
+            #     "camera_type": "orbbec",
+            #     "dim": (1280, 720),
+            # },
             "wrist_2": {
                 "camera_index": 4,
                 "dim": (1280, 720),
@@ -53,7 +53,8 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
         }
         IMAGE_CROP = {
             "wrist_1": lambda img: img[340:660, 480:800],
-            "wrist_2": lambda img: img[40:360, 520:840],
+            # "wrist_2": lambda img: img[40:360, 520:840],
+            "wrist_2": lambda img: img[37:683, 442:870],
         }
         WOWSKIN_PORT = None
         # Tianji task poses use [x, y, z, rx, ry, rz], where xyz are in mm here
@@ -129,6 +130,9 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
         # 夹爪时序：第一轮等待更久，避免未完全张开就下探
         GRIPPER_OPEN_WAIT_SEC = 1.0
         FIRST_ROUND_GRIPPER_OPEN_WAIT_SEC = 2.8
+        # 抓取后从 TARGET_JOINTS 提起到 TOP_JOINTS 时，使用笛卡尔直线插值
+        LINEAR_LIFT_TARGET_TO_TOP = True
+        LINEAR_LIFT_TIMEOUT = 1.5
         # reset 轨迹平滑参数（不影响 RL step 主频）
         INTERPOLATE_HZ = 40.0
         INTERPOLATE_MAX_STEP_DEG = 0.7
