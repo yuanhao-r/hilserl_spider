@@ -96,7 +96,13 @@ class RAMEnv(BaseRAMRobotEnv):
             else:
                 print(f"RAMEnv: 未识别的相机配置: {cam_name}")
 
-    def go_to_reset(self, joint_reset=False, replay_start_pose=None, from_quick_regrasp=False):
+    def go_to_reset(
+        self,
+        joint_reset=False,
+        replay_start_pose=None,
+        from_quick_regrasp=False,
+        from_target_after_grasp=False,
+    ):
         """
         Move to the rest position defined in base class.
         Add a small z offset before going to rest to avoid collision with object.
@@ -208,11 +214,17 @@ class RAMEnv(BaseRAMRobotEnv):
                 getattr(self.config, "RESET_CHAINED_WAYPOINT_MOTION", True)
             )
             chained_timeout = float(getattr(self.config, "RESET_CHAINED_TIMEOUT", 3.0))
+            if from_target_after_grasp:
+                chained_timeout *= float(
+                    getattr(self.config, "RESET_CHAINED_FROM_TARGET_TIMEOUT_SCALE", 1.35)
+                )
             top_revisit_threshold = float(
                 getattr(self.config, "TOP_REVISIT_THRESHOLD_M", 0.004)
             )
             include_top_waypoint = top_pose is not None
-            if include_top_waypoint and from_quick_regrasp:
+            if include_top_waypoint and from_target_after_grasp:
+                include_top_waypoint = True
+            elif include_top_waypoint and from_quick_regrasp:
                 self._update_currpos()
                 include_top_waypoint = (
                     float(np.linalg.norm(self.currpos[:3] - top_pose[:3])) > top_revisit_threshold
@@ -385,7 +397,7 @@ class RAMEnv(BaseRAMRobotEnv):
         self.last_gripper_act = time.time()
         time.sleep(1.0)
         
-    def quick_regrasp(self):
+    def quick_regrasp(self, lift_after_grasp=True):
         if self._is_tianji_backend and hasattr(self, "interpolate_joint_move"):
             default_open_wait = float(getattr(self.config, "GRIPPER_OPEN_WAIT_SEC", 1.0))
             first_round_open_wait = float(
@@ -469,32 +481,33 @@ class RAMEnv(BaseRAMRobotEnv):
             self._wait_stable(1.0, reason="RAM quick_regrasp close")
 
             print("[自动复位] 抓取完毕，提起到安全点...")
-            if hasattr(self.config, "TOP_JOINTS"):
-                linear_lift = bool(getattr(self.config, "LINEAR_LIFT_TARGET_TO_TOP", True))
-                linear_timeout = float(getattr(self.config, "LINEAR_LIFT_TIMEOUT", 1.5))
-                if linear_lift and hasattr(self, "_joints_deg_to_pose6"):
-                    # 改为笛卡尔直线插值：使 TARGET_JOINTS -> TOP_JOINTS 的末端路径更接近直线
-                    top_pose = self._joints_deg_to_pose6(
-                        np.array(self.config.TOP_JOINTS, dtype=np.float64)
-                    )
-                    self.interpolate_move(
-                        np.array(top_pose, dtype=np.float64),
-                        timeout=max(0.2, linear_timeout * motion_timeout_scale),
-                        is_reset=True,
-                        ease=False,
-                    )
+            if lift_after_grasp:
+                if hasattr(self.config, "TOP_JOINTS"):
+                    linear_lift = bool(getattr(self.config, "LINEAR_LIFT_TARGET_TO_TOP", True))
+                    linear_timeout = float(getattr(self.config, "LINEAR_LIFT_TIMEOUT", 1.5))
+                    if linear_lift and hasattr(self, "_joints_deg_to_pose6"):
+                        # 改为笛卡尔直线插值：使 TARGET_JOINTS -> TOP_JOINTS 的末端路径更接近直线
+                        top_pose = self._joints_deg_to_pose6(
+                            np.array(self.config.TOP_JOINTS, dtype=np.float64)
+                        )
+                        self.interpolate_move(
+                            np.array(top_pose, dtype=np.float64),
+                            timeout=max(0.2, linear_timeout * motion_timeout_scale),
+                            is_reset=True,
+                            ease=False,
+                        )
+                    else:
+                        self.interpolate_joint_move(
+                            np.array(self.config.TOP_JOINTS, dtype=np.float64),
+                            timeout=1.5 * motion_timeout_scale,
+                            settle=intermediate_settle,
+                            settle_timeout=0.0,
+                        )
                 else:
-                    self.interpolate_joint_move(
-                        np.array(self.config.TOP_JOINTS, dtype=np.float64),
-                        timeout=1.5 * motion_timeout_scale,
-                        settle=intermediate_settle,
-                        settle_timeout=0.0,
-                    )
-            else:
-                top_pose = self._GRASP_POSE.copy()
-                top_pose[2] += 0.1
-                self._send_pos_command(top_pose, is_reset=True)
-            self._wait_stable(dwell_final_top, reason="RAM quick_regrasp final TOP")
+                    top_pose = self._GRASP_POSE.copy()
+                    top_pose[2] += 0.1
+                    self._send_pos_command(top_pose, is_reset=True)
+                self._wait_stable(dwell_final_top, reason="RAM quick_regrasp final TOP")
             self._quick_regrasp_count += 1
             return
 
@@ -540,14 +553,20 @@ class RAMEnv(BaseRAMRobotEnv):
                 self.should_regrasp = False
             
             did_quick_regrasp = False
+            continue_from_target_after_grasp = False
             if self.auto_quick_regrasp:
-                self.quick_regrasp()
+                chain_from_target = bool(
+                    getattr(self.config, "CHAIN_FROM_TARGET_AFTER_GRASP", True)
+                ) and bool(getattr(self.config, "RESET_CHAINED_WAYPOINT_MOTION", True))
+                self.quick_regrasp(lift_after_grasp=(not chain_from_target))
                 did_quick_regrasp = True
+                continue_from_target_after_grasp = chain_from_target
 
             self.go_to_reset(
                 joint_reset=joint_reset,
                 replay_start_pose=replay_start_pose,
                 from_quick_regrasp=did_quick_regrasp,
+                from_target_after_grasp=continue_from_target_after_grasp,
             )
             self.curr_path_length = 0
 

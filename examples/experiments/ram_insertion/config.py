@@ -162,6 +162,9 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
         # 将 TOP->RESET->RANDOM 作为一条连续 waypoint 轨迹下发，减少中间点顿挫/下垂
         RESET_CHAINED_WAYPOINT_MOTION = True
         RESET_CHAINED_TIMEOUT = 3.0
+        # 夹爪闭合后从 TARGET 连续衔接到 TOP->RESET->RANDOM，避免 TARGET->TOP 到点停顿
+        CHAIN_FROM_TARGET_AFTER_GRASP = True
+        RESET_CHAINED_FROM_TARGET_TIMEOUT_SCALE = 1.35
         # quick_regrasp 结束后若已在 TOP 附近，则 reset 流程不再重复经过 TOP
         TOP_REVISIT_THRESHOLD_M = 0.004
         # 宏观复位阶段优先用位置模式，结束后恢复阻抗模式供 RL 控制
@@ -181,13 +184,14 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
         QUICK_REGRASP_DWELL_TOP_SEC = 0.0
         QUICK_REGRASP_DWELL_TARGET_SEC = 0.0
         QUICK_REGRASP_DWELL_FINAL_TOP_SEC = 0.0
-        # 可选：是否覆盖默认阻抗参数（先关，确认稳定后再开）
-        RESET_APPLY_CUSTOM_IMPEDANCE = False
-        RESET_IMPEDANCE_JOINT_K = [2.5, 2.5, 2.8, 1.8, 1.2, 1.2, 1.1]
-        RESET_IMPEDANCE_JOINT_D = [0.4, 0.4, 0.45, 0.28, 0.25, 0.25, 0.22]
-        RESET_IMPEDANCE_CART_K = [2400, 2400, 3200, 55, 55, 55, 24]
-        RESET_IMPEDANCE_CART_D = [0.18, 0.18, 0.25, 0.4, 0.4, 0.4, 1.0]
-        RESET_IMPEDANCE_CART_D_SECONDARY = [1.0, 1.0, 1.2, 1.0, 1.0, 1.0, 1.0]
+        # 右臂(B)抗下坠阻抗增强（负载抓取工况）
+        RESET_APPLY_CUSTOM_IMPEDANCE = True
+        RESET_IMPEDANCE_TARGET_ARM = "B"
+        RESET_IMPEDANCE_JOINT_K = [3.4, 3.4, 3.9, 2.6, 1.95, 1.95, 1.75]
+        RESET_IMPEDANCE_JOINT_D = [0.62, 0.62, 0.70, 0.50, 0.42, 0.42, 0.38]
+        RESET_IMPEDANCE_CART_K = [3400, 3400, 5200, 95, 95, 95, 40]
+        RESET_IMPEDANCE_CART_D = [0.38, 0.38, 0.54, 0.78, 0.78, 0.78, 1.6]
+        RESET_IMPEDANCE_CART_D_SECONDARY = [1.6, 1.6, 1.9, 1.35, 1.35, 1.35, 1.35]
         DISPLAY_IMAGE = True
         MAX_EPISODE_LENGTH = 1000
         BASIC_JOINT_RESET = np.array(

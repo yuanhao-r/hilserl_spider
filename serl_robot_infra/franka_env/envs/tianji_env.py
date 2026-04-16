@@ -133,6 +133,7 @@ class DefaultTianjiEnvConfig:
     QUICK_REGRASP_DWELL_TARGET_SEC: float = 0.0
     QUICK_REGRASP_DWELL_FINAL_TOP_SEC: float = 0.0
     RESET_APPLY_CUSTOM_IMPEDANCE: bool = False
+    RESET_IMPEDANCE_TARGET_ARM: str = "B"
     RESET_IMPEDANCE_JOINT_K = None
     RESET_IMPEDANCE_JOINT_D = None
     RESET_IMPEDANCE_CART_K = None
@@ -660,6 +661,7 @@ class TianjiEnv(gym.Env):
             cart_k=cart_k,
             cart_d=cart_d,
             cart_d_secondary=cart_d_secondary,
+            target_arm=getattr(self.config, "RESET_IMPEDANCE_TARGET_ARM", "B"),
         )
         if not ok:
             print("[ANTI_SAG] failed to apply custom impedance profile.")
@@ -677,6 +679,9 @@ class TianjiEnv(gym.Env):
             )
             if not ok:
                 print("[ANTI_SAG] failed to switch to position mode for reset.")
+        else:
+            # 不切位置模式时，确保每次 reset 入口都把自定义阻抗写回去。
+            self._apply_custom_impedance_profile_if_needed()
         self._mark_ik_seed_refresh(f"enter_reset_motion_mode {reason}")
 
     def _restore_control_mode_after_reset(self, reason: str = ""):
