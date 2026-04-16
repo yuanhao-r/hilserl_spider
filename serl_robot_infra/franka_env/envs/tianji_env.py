@@ -103,7 +103,41 @@ class DefaultTianjiEnvConfig:
     # 复位/示教等插值运动参数（不影响策略 step 主频）
     INTERPOLATE_HZ: float = 40.0
     INTERPOLATE_MAX_STEP_DEG: float = 0.8
+    INTERPOLATE_MAX_POS_STEP_M: float = 0.0025
+    INTERPOLATE_MAX_ROT_STEP_RAD: float = 0.025
     INTERPOLATE_EASE: bool = True
+    INTERPOLATE_SETTLE_TIMEOUT: float = 0.45
+    INTERPOLATE_SETTLE_TOL_DEG: float = 0.2
+    INTERPOLATE_SETTLE_HZ: float = 60.0
+    RESET_HOLD_DURING_SLEEP: bool = True
+    RESET_HOLD_HZ: float = 40.0
+    RESET_CONTINUOUS_MODE: bool = True
+    RESET_INTERMEDIATE_SETTLE: bool = False
+    RESET_FINAL_SETTLE_TIMEOUT: float = 0.12
+    RESET_HANDOFF_HOLD_SEC: float = 0.10
+    RESET_ASYNC_HANDOFF_HOLD: bool = True
+    RESET_HANDOFF_MAX_SEC: float = 1.0
+    RESET_HANDOFF_HZ: float = 60.0
+    RESET_USE_POSITION_MODE: bool = True
+    RESET_POSITION_MODE_VEL_RATIO: int = 12
+    RESET_POSITION_MODE_ACC_RATIO: int = 12
+    RESET_RESTORE_IMPEDANCE_ON_EXIT: bool = True
+    RESET_IMPEDANCE_VEL_RATIO: int = 90
+    RESET_IMPEDANCE_ACC_RATIO: int = 90
+    RESET_TOP_TO_RESET_LINEAR: bool = False
+    RESET_TOP_TO_RESET_TIMEOUT: float = 2.0
+    RESET_REPLAY_ALIGN_DWELL_SEC: float = 0.0
+    RESET_AFTER_RESET_DWELL_SEC: float = 0.0
+    RESET_AFTER_RANDOM_DWELL_SEC: float = 0.0
+    QUICK_REGRASP_DWELL_TOP_SEC: float = 0.0
+    QUICK_REGRASP_DWELL_TARGET_SEC: float = 0.0
+    QUICK_REGRASP_DWELL_FINAL_TOP_SEC: float = 0.0
+    RESET_APPLY_CUSTOM_IMPEDANCE: bool = False
+    RESET_IMPEDANCE_JOINT_K = None
+    RESET_IMPEDANCE_JOINT_D = None
+    RESET_IMPEDANCE_CART_K = None
+    RESET_IMPEDANCE_CART_D = None
+    RESET_IMPEDANCE_CART_D_SECONDARY = None
     BASIC_JOINT_RESET = np.zeros((7,))
     RANDOM_RESET = False
     RANDOM_XY_RANGE = 0.0
@@ -203,7 +237,93 @@ class TianjiEnv(gym.Env):
         self.interpolate_max_step_deg = float(
             getattr(config, "INTERPOLATE_MAX_STEP_DEG", 0.8)
         )
+        self.interpolate_max_pos_step_m = float(
+            getattr(config, "INTERPOLATE_MAX_POS_STEP_M", 0.0025)
+        )
+        self.interpolate_max_rot_step_rad = float(
+            getattr(config, "INTERPOLATE_MAX_ROT_STEP_RAD", 0.025)
+        )
         self.interpolate_ease = bool(getattr(config, "INTERPOLATE_EASE", True))
+        self.interpolate_settle_timeout = float(
+            getattr(config, "INTERPOLATE_SETTLE_TIMEOUT", 0.45)
+        )
+        self.interpolate_settle_tol_deg = float(
+            getattr(config, "INTERPOLATE_SETTLE_TOL_DEG", 0.2)
+        )
+        self.interpolate_settle_hz = float(
+            getattr(config, "INTERPOLATE_SETTLE_HZ", 60.0)
+        )
+        self.reset_hold_during_sleep = bool(
+            getattr(config, "RESET_HOLD_DURING_SLEEP", True)
+        )
+        self.reset_hold_hz = float(getattr(config, "RESET_HOLD_HZ", 40.0))
+        self.reset_continuous_mode = bool(
+            getattr(config, "RESET_CONTINUOUS_MODE", True)
+        )
+        self.reset_intermediate_settle = bool(
+            getattr(config, "RESET_INTERMEDIATE_SETTLE", False)
+        )
+        self.reset_final_settle_timeout = float(
+            getattr(config, "RESET_FINAL_SETTLE_TIMEOUT", 0.12)
+        )
+        self.reset_handoff_hold_sec = float(
+            getattr(config, "RESET_HANDOFF_HOLD_SEC", 0.10)
+        )
+        self.reset_async_handoff_hold = bool(
+            getattr(config, "RESET_ASYNC_HANDOFF_HOLD", True)
+        )
+        self.reset_handoff_max_sec = float(
+            getattr(config, "RESET_HANDOFF_MAX_SEC", 1.0)
+        )
+        self.reset_handoff_hz = float(
+            getattr(config, "RESET_HANDOFF_HZ", 60.0)
+        )
+        self.reset_use_position_mode = bool(
+            getattr(config, "RESET_USE_POSITION_MODE", True)
+        )
+        self.reset_position_mode_vel_ratio = int(
+            getattr(config, "RESET_POSITION_MODE_VEL_RATIO", 12)
+        )
+        self.reset_position_mode_acc_ratio = int(
+            getattr(config, "RESET_POSITION_MODE_ACC_RATIO", 12)
+        )
+        self.reset_restore_impedance_on_exit = bool(
+            getattr(config, "RESET_RESTORE_IMPEDANCE_ON_EXIT", True)
+        )
+        self.reset_impedance_vel_ratio = int(
+            getattr(config, "RESET_IMPEDANCE_VEL_RATIO", 90)
+        )
+        self.reset_impedance_acc_ratio = int(
+            getattr(config, "RESET_IMPEDANCE_ACC_RATIO", 90)
+        )
+        self.reset_top_to_reset_linear = bool(
+            getattr(config, "RESET_TOP_TO_RESET_LINEAR", False)
+        )
+        self.reset_top_to_reset_timeout = float(
+            getattr(config, "RESET_TOP_TO_RESET_TIMEOUT", 2.0)
+        )
+        self.reset_replay_align_dwell_sec = float(
+            getattr(config, "RESET_REPLAY_ALIGN_DWELL_SEC", 0.0)
+        )
+        self.reset_after_reset_dwell_sec = float(
+            getattr(config, "RESET_AFTER_RESET_DWELL_SEC", 0.0)
+        )
+        self.reset_after_random_dwell_sec = float(
+            getattr(config, "RESET_AFTER_RANDOM_DWELL_SEC", 0.0)
+        )
+        self.quick_regrasp_dwell_top_sec = float(
+            getattr(config, "QUICK_REGRASP_DWELL_TOP_SEC", 0.0)
+        )
+        self.quick_regrasp_dwell_target_sec = float(
+            getattr(config, "QUICK_REGRASP_DWELL_TARGET_SEC", 0.0)
+        )
+        self.quick_regrasp_dwell_final_top_sec = float(
+            getattr(config, "QUICK_REGRASP_DWELL_FINAL_TOP_SEC", 0.0)
+        )
+        self.reset_apply_custom_impedance = bool(
+            getattr(config, "RESET_APPLY_CUSTOM_IMPEDANCE", False)
+        )
+        self._reset_motion_mode_entered = False
 
         self.randomreset = config.RANDOM_RESET
         self.random_xy_range = float(config.RANDOM_XY_RANGE)
@@ -221,6 +341,8 @@ class TianjiEnv(gym.Env):
         self._warned_gripper_unavailable = False
         # 关节空间直控/模式切换后，下一次 IK 需要用当前实测关节角重新对齐种子
         self._ik_need_seed_refresh = True
+        self._handoff_hold_stop_evt = threading.Event()
+        self._handoff_hold_thread = None
 
         self.base_right_tf = None
         self.base_left_tf = None
@@ -486,6 +608,230 @@ class TianjiEnv(gym.Env):
         if self.debug_twitch and reason:
             self._debug_log(f"ik_seed_refresh marked: {reason}")
 
+    @staticmethod
+    def _normalize_kd_list(values, name: str):
+        if values is None:
+            return None
+        arr = np.array(values, dtype=np.float64).reshape(-1)
+        if arr.shape[0] != 7 or not np.all(np.isfinite(arr)):
+            print(f"[ANTI_SAG] ignore invalid {name}, expect 7 finite values.")
+            return None
+        return arr.tolist()
+
+    def _apply_custom_impedance_profile_if_needed(self):
+        if (
+            self.fake_env
+            or self.controller is None
+            or not self.reset_apply_custom_impedance
+            or not hasattr(self.controller, "set_cartesian_impedance_profile")
+        ):
+            return
+        joint_k = self._normalize_kd_list(
+            getattr(self.config, "RESET_IMPEDANCE_JOINT_K", None),
+            "RESET_IMPEDANCE_JOINT_K",
+        )
+        joint_d = self._normalize_kd_list(
+            getattr(self.config, "RESET_IMPEDANCE_JOINT_D", None),
+            "RESET_IMPEDANCE_JOINT_D",
+        )
+        cart_k = self._normalize_kd_list(
+            getattr(self.config, "RESET_IMPEDANCE_CART_K", None),
+            "RESET_IMPEDANCE_CART_K",
+        )
+        cart_d = self._normalize_kd_list(
+            getattr(self.config, "RESET_IMPEDANCE_CART_D", None),
+            "RESET_IMPEDANCE_CART_D",
+        )
+        cart_d_secondary = self._normalize_kd_list(
+            getattr(self.config, "RESET_IMPEDANCE_CART_D_SECONDARY", None),
+            "RESET_IMPEDANCE_CART_D_SECONDARY",
+        )
+        if (
+            joint_k is None
+            and joint_d is None
+            and cart_k is None
+            and cart_d is None
+            and cart_d_secondary is None
+        ):
+            return
+        ok = self.controller.set_cartesian_impedance_profile(
+            joint_k=joint_k,
+            joint_d=joint_d,
+            cart_k=cart_k,
+            cart_d=cart_d,
+            cart_d_secondary=cart_d_secondary,
+        )
+        if not ok:
+            print("[ANTI_SAG] failed to apply custom impedance profile.")
+
+    def _enter_reset_motion_mode(self, reason: str = ""):
+        if self.fake_env or self.controller is None:
+            return
+        if self._reset_motion_mode_entered:
+            return
+        self._reset_motion_mode_entered = True
+        if self.reset_use_position_mode and hasattr(self.controller, "enter_position_mode"):
+            ok = self.controller.enter_position_mode(
+                vel_ratio=self.reset_position_mode_vel_ratio,
+                acc_ratio=self.reset_position_mode_acc_ratio,
+            )
+            if not ok:
+                print("[ANTI_SAG] failed to switch to position mode for reset.")
+        self._mark_ik_seed_refresh(f"enter_reset_motion_mode {reason}")
+
+    def _restore_control_mode_after_reset(self, reason: str = ""):
+        if self.fake_env or self.controller is None:
+            self._reset_motion_mode_entered = False
+            return
+        if not self._reset_motion_mode_entered:
+            return
+        self._reset_motion_mode_entered = False
+        if self.reset_restore_impedance_on_exit and hasattr(
+            self.controller, "enter_cartesian_impedance_mode"
+        ):
+            ok = self.controller.enter_cartesian_impedance_mode(
+                vel_ratio=self.reset_impedance_vel_ratio,
+                acc_ratio=self.reset_impedance_acc_ratio,
+            )
+            if not ok:
+                print("[ANTI_SAG] failed to restore cartesian impedance mode.")
+            self._apply_custom_impedance_profile_if_needed()
+        self._mark_ik_seed_refresh(f"restore_control_mode_after_reset {reason}")
+
+    def _pause_with_hold(self, sec: float, reason: str = ""):
+        dt = max(0.0, float(sec))
+        if dt <= 0:
+            return
+        if (
+            self.fake_env
+            or self.controller is None
+            or not self.reset_hold_during_sleep
+        ):
+            time.sleep(dt)
+            return
+        hold_hz = max(1.0, float(self.reset_hold_hz))
+        period = 1.0 / hold_hz
+        target_ql = (
+            np.array(self.controller.get_joint_pos_rad(arm_id=1), dtype=np.float64)
+            / self.controller.DEG_TO_RAD
+        )
+        target_qr = (
+            np.array(self.controller.get_joint_pos_rad(arm_id=2), dtype=np.float64)
+            / self.controller.DEG_TO_RAD
+        )
+        end_t = time.perf_counter() + dt
+        next_tick = time.perf_counter()
+        while True:
+            now = time.perf_counter()
+            if now >= end_t:
+                break
+            self.controller.step(
+                np.array(target_ql, dtype=np.float64),
+                np.array(target_qr, dtype=np.float64),
+                verbose=False,
+            )
+            next_tick += period
+            sleep_dt = min(max(0.0, next_tick - time.perf_counter()), max(0.0, end_t - time.perf_counter()))
+            if sleep_dt > 0:
+                time.sleep(sleep_dt)
+        self._update_currpos()
+        self.cmd_pose = self.currpos.copy()
+        self.nextpos = self.currpos.copy()
+
+    def _stop_async_handoff_hold(self):
+        th = getattr(self, "_handoff_hold_thread", None)
+        if th is None:
+            return
+        try:
+            self._handoff_hold_stop_evt.set()
+            if th.is_alive():
+                th.join(timeout=0.2)
+        finally:
+            self._handoff_hold_thread = None
+
+    def _start_async_handoff_hold(self, max_sec: float | None = None):
+        if (
+            self.fake_env
+            or self.controller is None
+            or not self.reset_async_handoff_hold
+        ):
+            return
+        self._stop_async_handoff_hold()
+        hold_sec = self.reset_handoff_max_sec if max_sec is None else float(max_sec)
+        hold_sec = max(0.0, hold_sec)
+        if hold_sec <= 0:
+            return
+        hold_hz = max(1.0, float(self.reset_handoff_hz))
+        period = 1.0 / hold_hz
+        target_ql = (
+            np.array(self.controller.get_joint_pos_rad(arm_id=1), dtype=np.float64)
+            / self.controller.DEG_TO_RAD
+        )
+        target_qr = (
+            np.array(self.controller.get_joint_pos_rad(arm_id=2), dtype=np.float64)
+            / self.controller.DEG_TO_RAD
+        )
+        self._handoff_hold_stop_evt = threading.Event()
+        stop_evt = self._handoff_hold_stop_evt
+
+        def _worker():
+            end_t = time.perf_counter() + hold_sec
+            next_tick = time.perf_counter()
+            while (not stop_evt.is_set()) and (time.perf_counter() < end_t):
+                try:
+                    self.controller.step(
+                        np.array(target_ql, dtype=np.float64),
+                        np.array(target_qr, dtype=np.float64),
+                        verbose=False,
+                    )
+                except Exception:
+                    break
+                next_tick += period
+                sleep_dt = max(0.0, next_tick - time.perf_counter())
+                if sleep_dt > 0:
+                    time.sleep(sleep_dt)
+
+        th = threading.Thread(target=_worker, daemon=True)
+        self._handoff_hold_thread = th
+        th.start()
+
+    def _settle_right_joint_target(self, target_deg: np.ndarray, timeout_override: float | None = None):
+        if self.fake_env or self.controller is None:
+            return
+        timeout_raw = self.interpolate_settle_timeout if timeout_override is None else timeout_override
+        timeout = max(0.0, float(timeout_raw))
+        if timeout <= 0:
+            return
+        tol_deg = max(1e-4, float(self.interpolate_settle_tol_deg))
+        hz = max(1.0, float(self.interpolate_settle_hz))
+        period = 1.0 / hz
+        target = np.array(target_deg, dtype=np.float64).reshape(-1)
+        if target.shape[0] != 7:
+            return
+        end_t = time.perf_counter() + timeout
+        next_tick = time.perf_counter()
+        while True:
+            ql_now = (
+                np.array(self.controller.get_joint_pos_rad(arm_id=1), dtype=np.float64)
+                / self.controller.DEG_TO_RAD
+            )
+            qr_now = (
+                np.array(self.controller.get_joint_pos_rad(arm_id=2), dtype=np.float64)
+                / self.controller.DEG_TO_RAD
+            )
+            max_err = float(np.max(np.abs(qr_now - target)))
+            self.controller.step(
+                np.array(ql_now, dtype=np.float64),
+                np.array(target, dtype=np.float64),
+                verbose=False,
+            )
+            if max_err <= tol_deg or time.perf_counter() >= end_t:
+                break
+            next_tick += period
+            sleep_dt = max(0.0, next_tick - time.perf_counter())
+            if sleep_dt > 0:
+                time.sleep(sleep_dt)
+
     def _ensure_safety_box_contains_key_poses(self, reason: str = ""):
         poses = []
         for name in ("currpos", "_RESET_POSE", "_TARGET_POSE", "_GRASP_POSE"):
@@ -559,6 +905,7 @@ class TianjiEnv(gym.Env):
     def step(self, action: np.ndarray) -> tuple:
         start_time = time.time()
         action = np.clip(action, self.action_space.low, self.action_space.high)
+        self._stop_async_handoff_hold()
 
         # 1. 确保指令目标状态被正确初始化 (阻断 IK/FK 累积误差)
         if not hasattr(self, "cmd_pose"):
@@ -693,17 +1040,36 @@ class TianjiEnv(gym.Env):
 
         return images
 
-    def interpolate_move(self, goal: np.ndarray, timeout: float, is_reset=False):
+    def interpolate_move(
+        self,
+        goal: np.ndarray,
+        timeout: float,
+        is_reset=False,
+        ease: bool | None = None,
+    ):
         rate_hz = max(1.0, float(self.interpolate_hz))
-        steps_guess = max(2, int(np.ceil(timeout * rate_hz)))
-        steps = max(2, int(np.ceil(timeout * rate_hz)))
         self._update_currpos()
-        if self.interpolate_ease:
+        goal_arr = np.array(goal, dtype=np.float64).reshape(-1)
+        if goal_arr.shape[0] != 6:
+            print(f"Invalid cartesian goal shape: {goal_arr.shape}, expected (6,)")
+            return
+
+        pos_delta = float(np.linalg.norm(goal_arr[:3] - self.currpos[:3]))
+        rot_delta = float(np.max(np.abs(goal_arr[3:] - self.currpos[3:])))
+        max_pos_step = max(1e-6, float(self.interpolate_max_pos_step_m))
+        max_rot_step = max(1e-6, float(self.interpolate_max_rot_step_rad))
+        steps_by_timeout = int(np.ceil(max(0.0, float(timeout)) * rate_hz))
+        steps_by_pos = int(np.ceil(pos_delta / max_pos_step))
+        steps_by_rot = int(np.ceil(rot_delta / max_rot_step))
+        steps = max(2, steps_by_timeout, steps_by_pos, steps_by_rot)
+
+        use_ease = self.interpolate_ease if ease is None else bool(ease)
+        if use_ease:
             u = np.linspace(0.0, 1.0, steps)
             s = 0.5 - 0.5 * np.cos(np.pi * u)  # smoothstep-like ease in/out
-            path = self.currpos[None, :] + (goal - self.currpos)[None, :] * s[:, None]
+            path = self.currpos[None, :] + (goal_arr - self.currpos)[None, :] * s[:, None]
         else:
-            path = np.linspace(self.currpos, goal, steps)
+            path = np.linspace(self.currpos, goal_arr, steps)
         period = 1.0 / rate_hz
         next_tick = time.perf_counter()
         for p in path:
@@ -713,10 +1079,93 @@ class TianjiEnv(gym.Env):
             sleep_dt = max(0.0, next_tick - time.perf_counter())
             if sleep_dt > 0:
                 time.sleep(sleep_dt)
-        self.nextpos = path[-1]
+        self.nextpos = goal_arr.copy()
+        self.cmd_pose = self.nextpos.copy()
         self._update_currpos()
 
-    def interpolate_joint_move(self, target_joints_deg: np.ndarray, timeout: float = 2.0):
+    def interpolate_move_waypoints(
+        self,
+        waypoints: list[np.ndarray],
+        timeout: float | None = None,
+        is_reset=False,
+    ):
+        """连续经过多个笛卡尔关键点，不在中间关键点刹停。"""
+        if self.fake_env:
+            return
+        if waypoints is None or len(waypoints) == 0:
+            return
+
+        self._update_currpos()
+        start = self.currpos.copy()
+        targets: list[np.ndarray] = []
+        prev = start
+        for wp in waypoints:
+            arr = np.array(wp, dtype=np.float64).reshape(-1)
+            if arr.shape[0] != 6:
+                continue
+            arr = self.clip_safety_box(arr)
+            if np.max(np.abs(arr - prev)) < 1e-6:
+                continue
+            targets.append(arr)
+            prev = arr
+        if not targets:
+            return
+
+        rate_hz = max(1.0, float(self.interpolate_hz))
+        max_pos_step = max(1e-6, float(self.interpolate_max_pos_step_m))
+        max_rot_step = max(1e-6, float(self.interpolate_max_rot_step_rad))
+
+        seg_metrics = []
+        seg_steps = []
+        prev = start
+        for tgt in targets:
+            pos_delta = float(np.linalg.norm(tgt[:3] - prev[:3]))
+            rot_delta = float(np.max(np.abs(tgt[3:] - prev[3:])))
+            metric = max(
+                pos_delta / max_pos_step,
+                rot_delta / max_rot_step,
+                1.0,
+            )
+            seg_metrics.append(metric)
+            seg_steps.append(max(2, int(np.ceil(metric))))
+            prev = tgt
+
+        total_steps = int(np.sum(seg_steps))
+        if timeout is not None:
+            desired_steps = max(2, int(np.ceil(max(0.0, float(timeout)) * rate_hz)))
+            if desired_steps > total_steps and total_steps > 0:
+                scale = float(desired_steps) / float(total_steps)
+                seg_steps = [max(2, int(np.ceil(s * scale))) for s in seg_steps]
+
+        path_parts = []
+        prev = start
+        for i, tgt in enumerate(targets):
+            n = max(2, int(seg_steps[i]))
+            seg = np.linspace(prev, tgt, n, endpoint=False)
+            path_parts.append(seg)
+            prev = tgt
+        path = np.vstack(path_parts + [targets[-1][None, :]])
+
+        period = 1.0 / rate_hz
+        next_tick = time.perf_counter()
+        for p in path:
+            self._send_pos_command(p, is_reset=is_reset)
+            self._update_currpos()
+            next_tick += period
+            sleep_dt = max(0.0, next_tick - time.perf_counter())
+            if sleep_dt > 0:
+                time.sleep(sleep_dt)
+        self.nextpos = targets[-1].copy()
+        self.cmd_pose = self.nextpos.copy()
+        self._update_currpos()
+
+    def interpolate_joint_move(
+        self,
+        target_joints_deg: np.ndarray,
+        timeout: float = 2.0,
+        settle: bool = True,
+        settle_timeout: float | None = None,
+    ):
         """纯关节空间的平滑移动，完全绕过逆运动学，杜绝抽搐！"""
         rate_hz = max(1.0, float(self.interpolate_hz))
         steps_guess = max(2, int(np.ceil(timeout * rate_hz)))
@@ -782,34 +1231,159 @@ class TianjiEnv(gym.Env):
             if sleep_dt > 0:
                 time.sleep(sleep_dt)
             self._debug_append_joint_sample(tag="interp_fb", target_qr=pr)
-            
+        # 到点后继续短暂闭环，减少“到点即松一下”导致的下垂
+        if settle:
+            self._settle_right_joint_target(target, timeout_override=settle_timeout)
+
         # 移动完毕后，强制同步底层的真实位置，防止下一轮启动时跳变
         self._update_currpos()
         self.cmd_pose = self.currpos.copy()
         self._mark_ik_seed_refresh("interpolate_joint_move end")
         self._debug_dump_recent_joint(reason="interpolate_joint_move end", window=3)
 
+    def interpolate_joint_waypoints(
+        self,
+        waypoints_deg: list[np.ndarray],
+        timeout: float | None = None,
+        settle_final: bool = True,
+        settle_timeout: float | None = None,
+    ):
+        """连续经过多个关节关键点，不在中间关键点刹停。"""
+        if self.fake_env:
+            return
+        if waypoints_deg is None or len(waypoints_deg) == 0:
+            return
+
+        current_ql = (
+            np.array(self.controller.get_joint_pos_rad(arm_id=1), dtype=np.float64)
+            / self.controller.DEG_TO_RAD
+        )
+        current_qr = (
+            np.array(self.controller.get_joint_pos_rad(arm_id=2), dtype=np.float64)
+            / self.controller.DEG_TO_RAD
+        )
+
+        targets: list[np.ndarray] = []
+        prev = current_qr.copy()
+        for wp in waypoints_deg:
+            arr = np.array(wp, dtype=np.float64).reshape(-1)
+            if arr.shape[0] != 7:
+                continue
+            if np.max(np.abs(arr - prev)) < 1e-3:
+                continue
+            targets.append(arr)
+            prev = arr
+        if not targets:
+            self._update_currpos()
+            self.cmd_pose = self.currpos.copy()
+            return
+
+        rate_hz = max(1.0, float(self.interpolate_hz))
+        step_cap_deg = max(1e-3, float(self.interpolate_max_step_deg))
+        seg_steps = []
+        prev = current_qr.copy()
+        for tgt in targets:
+            max_delta_deg = float(np.max(np.abs(tgt - prev)))
+            seg_steps.append(max(2, int(np.ceil(max_delta_deg / step_cap_deg))))
+            prev = tgt
+
+        total_steps = int(np.sum(seg_steps))
+        if timeout is not None:
+            desired_steps = max(2, int(np.ceil(max(0.0, float(timeout)) * rate_hz)))
+            if desired_steps > total_steps and total_steps > 0:
+                scale = float(desired_steps) / float(total_steps)
+                seg_steps = [max(2, int(np.ceil(s * scale))) for s in seg_steps]
+
+        path_parts = []
+        prev = current_qr.copy()
+        for i, tgt in enumerate(targets):
+            n = max(2, int(seg_steps[i]))
+            seg = np.linspace(prev, tgt, n, endpoint=False)
+            path_parts.append(seg)
+            prev = tgt
+        path_r = np.vstack(path_parts + [targets[-1][None, :]])
+
+        period = 1.0 / rate_hz
+        next_tick = time.perf_counter()
+        for pr in path_r:
+            self.controller.step(
+                np.array(current_ql, dtype=np.float64),
+                np.array(pr, dtype=np.float64),
+                verbose=False,
+            )
+            next_tick += period
+            sleep_dt = max(0.0, next_tick - time.perf_counter())
+            if sleep_dt > 0:
+                time.sleep(sleep_dt)
+
+        if settle_final:
+            self._settle_right_joint_target(
+                np.array(targets[-1], dtype=np.float64),
+                timeout_override=settle_timeout,
+            )
+
+        self._update_currpos()
+        self.cmd_pose = self.currpos.copy()
+        self._mark_ik_seed_refresh("interpolate_joint_waypoints end")
+
     
     def go_to_reset(self, joint_reset=False, replay_start_pose=None):
         """安全的宏观复位：纯关节空间移动"""
+        intermediate_settle = (
+            self.reset_intermediate_settle if self.reset_continuous_mode else True
+        )
         # 1. 先安全退回到插槽正上方 (防止直接复位撞坏主板)
         if hasattr(self.config, "TOP_JOINTS"):
-            self.interpolate_joint_move(self.config.TOP_JOINTS, timeout=1.5)
+            self.interpolate_joint_move(
+                self.config.TOP_JOINTS,
+                timeout=1.5,
+                settle=intermediate_settle,
+                settle_timeout=0.0,
+            )
 
         # 2. 如果有轨迹回放的起点，用笛卡尔微调过去
         if replay_start_pose is not None:
             self.interpolate_move(replay_start_pose, timeout=1.0, is_reset=True)
-            time.sleep(0.5)
+            self._pause_with_hold(
+                self.reset_replay_align_dwell_sec,
+                reason="go_to_reset replay_start_pose",
+            )
             return
 
         # 3. 移动到初始待命点
         if hasattr(self.config, "RESET_JOINTS"):
-            self.interpolate_joint_move(self.config.RESET_JOINTS, timeout=2.0)
-        time.sleep(0.5)
+            if self.reset_top_to_reset_linear and hasattr(self, "_joints_deg_to_pose6"):
+                reset_pose = self._joints_deg_to_pose6(
+                    np.array(self.config.RESET_JOINTS, dtype=np.float64)
+                )
+                reset_pose = self.clip_safety_box(np.array(reset_pose, dtype=np.float64))
+                self.interpolate_move(
+                    reset_pose,
+                    timeout=max(0.2, float(self.reset_top_to_reset_timeout)),
+                    is_reset=True,
+                )
+            else:
+                final_settle = (not self.randomreset)
+                self.interpolate_joint_move(
+                    self.config.RESET_JOINTS,
+                    timeout=2.0,
+                    settle=final_settle,
+                    settle_timeout=self.reset_final_settle_timeout if final_settle else 0.0,
+                )
+        if not self.randomreset:
+            self._pause_with_hold(
+                self.reset_after_reset_dwell_sec,
+                reason="go_to_reset RESET_JOINTS",
+            )
 
         # 4. 最后加上用于数据增强的微小随机偏移 (笛卡尔系)
         if self.randomreset:
-            random_pose = self.currpos.copy()
+            base_pose = (
+                self._RESET_POSE.copy()
+                if hasattr(self, "_RESET_POSE")
+                else self.currpos.copy()
+            )
+            random_pose = base_pose.copy()
             random_pose[:2] += np.random.uniform(
                 -self.random_xy_range, self.random_xy_range, (2,)
             )
@@ -819,63 +1393,104 @@ class TianjiEnv(gym.Env):
             )
             random_pose[3:] = euler_random
             self.interpolate_move(random_pose, timeout=1.0, is_reset=True)
-            time.sleep(0.5)
+            self._pause_with_hold(
+                self.reset_after_random_dwell_sec,
+                reason="go_to_reset random_pose",
+            )
 
     def quick_regrasp(self):
         """全自动流水线抓取：纯关节空间移动"""
+        intermediate_settle = (
+            self.reset_intermediate_settle if self.reset_continuous_mode else True
+        )
         print("[自动复位] 张开夹爪...")
         self._gripper_control(False)
-        time.sleep(1.0)
+        self._pause_with_hold(1.0, reason="quick_regrasp open gripper")
 
         print("[自动复位] 向上拔出到安全点...")
         if hasattr(self.config, "TOP_JOINTS"):
-            self.interpolate_joint_move(self.config.TOP_JOINTS, timeout=1.5)
-        time.sleep(0.5)
+            self.interpolate_joint_move(
+                self.config.TOP_JOINTS,
+                timeout=1.5,
+                settle=intermediate_settle,
+                settle_timeout=0.0,
+            )
+        self._pause_with_hold(
+            self.quick_regrasp_dwell_top_sec,
+            reason="quick_regrasp at TOP",
+        )
 
         print("[自动复位] 下降到抓取点...")
         if hasattr(self.config, "TARGET_JOINTS"):
-            self.interpolate_joint_move(self.config.TARGET_JOINTS, timeout=1.5)
-        time.sleep(0.5)
+            self.interpolate_joint_move(
+                self.config.TARGET_JOINTS,
+                timeout=1.5,
+                settle=intermediate_settle,
+                settle_timeout=0.0,
+            )
+        self._pause_with_hold(
+            self.quick_regrasp_dwell_target_sec,
+            reason="quick_regrasp at TARGET",
+        )
 
         print("[自动复位] 闭合夹爪...")
         self._gripper_control(True)
         self.last_gripper_act = time.time()
-        time.sleep(1.5)
+        self._pause_with_hold(1.5, reason="quick_regrasp close gripper")
 
         print("[自动复位] 抓取完毕，提起到安全点...")
         if hasattr(self.config, "TOP_JOINTS"):
-            self.interpolate_joint_move(self.config.TOP_JOINTS, timeout=1.5)
-        time.sleep(0.5)
+            self.interpolate_joint_move(
+                self.config.TOP_JOINTS,
+                timeout=1.5,
+                settle=intermediate_settle,
+                settle_timeout=0.0,
+            )
+        self._pause_with_hold(
+            self.quick_regrasp_dwell_final_top_sec,
+            reason="quick_regrasp final TOP",
+        )
         
 
     def reset(self, joint_reset=False, replay_start_pose=None, **kwargs):
-        self.last_gripper_act = time.time()
-        if self.save_video:
-            self.save_video_recording()
+        self._enter_reset_motion_mode(reason="TianjiEnv.reset")
+        try:
+            self._stop_async_handoff_hold()
+            self.last_gripper_act = time.time()
+            if self.save_video:
+                self.save_video_recording()
 
-        if self.should_regrasp:
-            self.regrasp()
-            self.should_regrasp = False
-        
-        if True:
-            self.quick_regrasp()
-
-        self.go_to_reset(joint_reset=joint_reset, replay_start_pose=replay_start_pose)
-        self.curr_path_length = 0
-
-        if self.force_sensor is not None:
-            self.force_sensor.reset_baseline()
+            if self.should_regrasp:
+                self.regrasp()
+                self.should_regrasp = False
             
-        self._update_currpos()
-        
-        # 【关键修复】：将 cmd_pose 强制对齐到复位后的姿态！
-        # 否则第二轮开始时，IK 收到的依然是你第一轮压到很低位置的旧指令，导致起步抽搐！
-        self.cmd_pose = self.currpos.copy()
-        
-        obs = self._get_obs()
-        self.terminate = False
-        self.max_distance = None
-        return obs, {}
+            if True:
+                self.quick_regrasp()
+
+            self.go_to_reset(joint_reset=joint_reset, replay_start_pose=replay_start_pose)
+            self.curr_path_length = 0
+
+            if self.force_sensor is not None:
+                self.force_sensor.reset_baseline()
+                
+            self._update_currpos()
+            
+            # 【关键修复】：将 cmd_pose 强制对齐到复位后的姿态！
+            # 否则第二轮开始时，IK 收到的依然是你第一轮压到很低位置的旧指令，导致起步抽搐！
+            self.cmd_pose = self.currpos.copy()
+            self.nextpos = self.currpos.copy()
+            self._pause_with_hold(
+                self.reset_handoff_hold_sec,
+                reason="reset handoff to step",
+            )
+            self._start_async_handoff_hold(max_sec=self.reset_handoff_max_sec)
+            
+            obs = self._get_obs()
+            self.terminate = False
+            self.max_distance = None
+            return obs, {}
+        finally:
+            self._restore_control_mode_after_reset(reason="TianjiEnv.reset")
 
     def save_video_recording(self):
         try:
@@ -1139,6 +1754,7 @@ class TianjiEnv(gym.Env):
         return copy.deepcopy(dict(images=images, state=state_observation))
 
     def close(self):
+        self._stop_async_handoff_hold()
         if hasattr(self, "listener"):
             self.listener.stop()
 

@@ -4,6 +4,8 @@ openpi_test/data_raw/
 openpi_test/data_transformed/
 openpi_test/openpi/checkpoints/
 openpi_test/openpi/model/
+examples/experiments/ram_insertion/demo_data/
+examples/experiments/ram_insertion/first_run*/
 lerobot/
 *.tar
 *.gz

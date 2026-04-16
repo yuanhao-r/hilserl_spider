@@ -47,7 +47,7 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
             #     "dim": (1280, 720),
             # },
             "wrist_2": {
-                "camera_index": 4,
+                "camera_index": 12,
                 "dim": (1280, 720),
             },
         }
@@ -133,10 +133,61 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
         # 抓取后从 TARGET_JOINTS 提起到 TOP_JOINTS 时，使用笛卡尔直线插值
         LINEAR_LIFT_TARGET_TO_TOP = True
         LINEAR_LIFT_TIMEOUT = 1.5
+        # 从 TOP_JOINTS 下降到 TARGET_JOINTS 也使用笛卡尔直线
+        LINEAR_DROP_TOP_TO_TARGET = True
+        LINEAR_DROP_TIMEOUT = 1.5
+        # 首轮通常载荷/状态突变更大，放慢动作避免冲击反弹
+        FIRST_ROUND_MOTION_TIMEOUT_SCALE = 2.0
         # reset 轨迹平滑参数（不影响 RL step 主频）
         INTERPOLATE_HZ = 40.0
         INTERPOLATE_MAX_STEP_DEG = 0.7
+        INTERPOLATE_MAX_POS_STEP_M = 0.0025
+        INTERPOLATE_MAX_ROT_STEP_RAD = 0.025
         INTERPOLATE_EASE = True
+        # 关键点到达后继续短暂闭环，抑制“到点松一下”的下垂
+        INTERPOLATE_SETTLE_TIMEOUT = 0.2
+        INTERPOLATE_SETTLE_TOL_DEG = 0.15
+        INTERPOLATE_SETTLE_HZ = 80.0
+        # reset/quick_regrasp 阶段：sleep 改为持续 hold 指令
+        RESET_HOLD_DURING_SLEEP = True
+        RESET_HOLD_HZ = 50.0
+        # 连续 reset：中间关键点不收敛停顿，只在最终点短暂收敛
+        RESET_CONTINUOUS_MODE = True
+        RESET_INTERMEDIATE_SETTLE = False
+        RESET_FINAL_SETTLE_TIMEOUT = 0.12
+        RESET_HANDOFF_HOLD_SEC = 0.10
+        RESET_ASYNC_HANDOFF_HOLD = True
+        RESET_HANDOFF_MAX_SEC = 1.5
+        RESET_HANDOFF_HZ = 80.0
+        # 将 TOP->RESET->RANDOM 作为一条连续 waypoint 轨迹下发，减少中间点顿挫/下垂
+        RESET_CHAINED_WAYPOINT_MOTION = True
+        RESET_CHAINED_TIMEOUT = 3.0
+        # quick_regrasp 结束后若已在 TOP 附近，则 reset 流程不再重复经过 TOP
+        TOP_REVISIT_THRESHOLD_M = 0.004
+        # 宏观复位阶段优先用位置模式，结束后恢复阻抗模式供 RL 控制
+        RESET_USE_POSITION_MODE = False
+        RESET_POSITION_MODE_VEL_RATIO = 14
+        RESET_POSITION_MODE_ACC_RATIO = 14
+        RESET_RESTORE_IMPEDANCE_ON_EXIT = False
+        RESET_IMPEDANCE_VEL_RATIO = 90
+        RESET_IMPEDANCE_ACC_RATIO = 90
+        # TOP_JOINTS -> RESET_JOINTS 是否改为笛卡尔直线
+        RESET_TOP_TO_RESET_LINEAR = False
+        RESET_TOP_TO_RESET_TIMEOUT = 2.0
+        # 关键点之间额外停顿（建议保持 0，避免“到点下垂”）
+        RESET_REPLAY_ALIGN_DWELL_SEC = 0.0
+        RESET_AFTER_RESET_DWELL_SEC = 0.0
+        RESET_AFTER_RANDOM_DWELL_SEC = 0.0
+        QUICK_REGRASP_DWELL_TOP_SEC = 0.0
+        QUICK_REGRASP_DWELL_TARGET_SEC = 0.0
+        QUICK_REGRASP_DWELL_FINAL_TOP_SEC = 0.0
+        # 可选：是否覆盖默认阻抗参数（先关，确认稳定后再开）
+        RESET_APPLY_CUSTOM_IMPEDANCE = False
+        RESET_IMPEDANCE_JOINT_K = [2.5, 2.5, 2.8, 1.8, 1.2, 1.2, 1.1]
+        RESET_IMPEDANCE_JOINT_D = [0.4, 0.4, 0.45, 0.28, 0.25, 0.25, 0.22]
+        RESET_IMPEDANCE_CART_K = [2400, 2400, 3200, 55, 55, 55, 24]
+        RESET_IMPEDANCE_CART_D = [0.18, 0.18, 0.25, 0.4, 0.4, 0.4, 1.0]
+        RESET_IMPEDANCE_CART_D_SECONDARY = [1.0, 1.0, 1.2, 1.0, 1.0, 1.0, 1.0]
         DISPLAY_IMAGE = True
         MAX_EPISODE_LENGTH = 1000
         BASIC_JOINT_RESET = np.array(
