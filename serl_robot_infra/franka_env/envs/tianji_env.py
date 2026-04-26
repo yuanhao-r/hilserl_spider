@@ -118,6 +118,12 @@ class DefaultTianjiEnvConfig:
     RESET_ASYNC_HANDOFF_HOLD: bool = True
     RESET_HANDOFF_MAX_SEC: float = 1.0
     RESET_HANDOFF_HZ: float = 60.0
+    # reset 交接窗口：若动作接近零，则先保持关节 hold，避免首拍 IK 跳解
+    RESET_HANDOFF_ZERO_ACTION_EPS: float = 1e-6
+    # 仅当位移动作超过该阈值才认为“控制已介入”（raw action 空间）
+    RESET_HANDOFF_UNLOCK_ACTION_EPS: float = 0.05
+    # 检测到介入后的第一拍是否丢弃位移动作（只保持），降低切换瞬态
+    RESET_HANDOFF_DROP_FIRST_CONTROL_STEP: bool = True
     RESET_USE_POSITION_MODE: bool = True
     RESET_POSITION_MODE_VEL_RATIO: int = 12
     RESET_POSITION_MODE_ACC_RATIO: int = 12
@@ -279,6 +285,15 @@ class TianjiEnv(gym.Env):
         self.reset_handoff_hz = float(
             getattr(config, "RESET_HANDOFF_HZ", 60.0)
         )
+        self.reset_handoff_zero_action_eps = float(
+            getattr(config, "RESET_HANDOFF_ZERO_ACTION_EPS", 1e-6)
+        )
+        self.reset_handoff_unlock_action_eps = float(
+            getattr(config, "RESET_HANDOFF_UNLOCK_ACTION_EPS", 0.05)
+        )
+        self.reset_handoff_drop_first_control_step = bool(
+            getattr(config, "RESET_HANDOFF_DROP_FIRST_CONTROL_STEP", True)
+        )
         self.reset_use_position_mode = bool(
             getattr(config, "RESET_USE_POSITION_MODE", True)
         )
@@ -344,6 +359,9 @@ class TianjiEnv(gym.Env):
         self._ik_need_seed_refresh = True
         self._handoff_hold_stop_evt = threading.Event()
         self._handoff_hold_thread = None
+        self._post_reset_realign_pending = False
+        self._post_reset_hold_target_ql = None
+        self._post_reset_hold_target_qr = None
 
         self.base_right_tf = None
         self.base_left_tf = None
@@ -743,13 +761,13 @@ class TianjiEnv(gym.Env):
         self.cmd_pose = self.currpos.copy()
         self.nextpos = self.currpos.copy()
 
-    def _stop_async_handoff_hold(self):
+    def _stop_async_handoff_hold(self, block: bool = True):
         th = getattr(self, "_handoff_hold_thread", None)
         if th is None:
             return
         try:
             self._handoff_hold_stop_evt.set()
-            if th.is_alive():
+            if block and th.is_alive():
                 th.join(timeout=0.2)
         finally:
             self._handoff_hold_thread = None
@@ -761,7 +779,7 @@ class TianjiEnv(gym.Env):
             or not self.reset_async_handoff_hold
         ):
             return
-        self._stop_async_handoff_hold()
+        self._stop_async_handoff_hold(block=False)
         hold_sec = self.reset_handoff_max_sec if max_sec is None else float(max_sec)
         hold_sec = max(0.0, hold_sec)
         if hold_sec <= 0:
@@ -799,6 +817,55 @@ class TianjiEnv(gym.Env):
         th = threading.Thread(target=_worker, daemon=True)
         self._handoff_hold_thread = th
         th.start()
+
+    def _is_zero_motion_action(self, action: np.ndarray) -> bool:
+        arr = np.array(action, dtype=np.float64).reshape(-1)
+        if arr.shape[0] < 6:
+            return True
+        eps = max(0.0, float(self.reset_handoff_zero_action_eps))
+        return float(np.max(np.abs(arr[:6]))) <= eps
+
+    def _has_control_intent(self, action: np.ndarray) -> bool:
+        arr = np.array(action, dtype=np.float64).reshape(-1)
+        if arr.shape[0] < 6:
+            return False
+        eps = max(0.0, float(self.reset_handoff_unlock_action_eps))
+        return float(np.max(np.abs(arr[:6]))) > eps
+
+    def _async_handoff_hold_alive(self) -> bool:
+        th = getattr(self, "_handoff_hold_thread", None)
+        return bool(th is not None and th.is_alive())
+
+    def _capture_post_reset_hold_target(self):
+        if self.fake_env or self.controller is None:
+            return
+        self._post_reset_hold_target_ql = (
+            np.array(self.controller.get_joint_pos_rad(arm_id=1), dtype=np.float64)
+            / self.controller.DEG_TO_RAD
+        )
+        self._post_reset_hold_target_qr = (
+            np.array(self.controller.get_joint_pos_rad(arm_id=2), dtype=np.float64)
+            / self.controller.DEG_TO_RAD
+        )
+
+    def _hold_post_reset_target_once(self):
+        if self.fake_env or self.controller is None:
+            return
+        if (
+            self._post_reset_hold_target_ql is None
+            or self._post_reset_hold_target_qr is None
+        ):
+            self._capture_post_reset_hold_target()
+        target_ql = np.array(self._post_reset_hold_target_ql, dtype=np.float64)
+        target_qr = np.array(self._post_reset_hold_target_qr, dtype=np.float64)
+        self.controller.step(
+            np.array(target_ql, dtype=np.float64),
+            np.array(target_qr, dtype=np.float64),
+            verbose=False,
+        )
+        self._update_currpos()
+        self.cmd_pose = self.currpos.copy()
+        self.nextpos = self.currpos.copy()
 
     def _settle_right_joint_target(self, target_deg: np.ndarray, timeout_override: float | None = None):
         if self.fake_env or self.controller is None:
@@ -910,7 +977,53 @@ class TianjiEnv(gym.Env):
     def step(self, action: np.ndarray) -> tuple:
         start_time = time.time()
         action = np.clip(action, self.action_space.low, self.action_space.high)
-        self._stop_async_handoff_hold()
+
+        if self._post_reset_realign_pending and (not self._has_control_intent(action)):
+            gripper_action = (
+                (action[6] if action.shape[0] > 6 else 0.0)
+                * self.action_scale[2]
+            )
+            self._send_gripper_command(gripper_action)
+            if self._async_handoff_hold_alive():
+                self._update_currpos()
+                self.cmd_pose = self.currpos.copy()
+                self.nextpos = self.currpos.copy()
+            else:
+                self._hold_post_reset_target_once()
+            self.curr_path_length += 1
+            ob = self._get_obs()
+            reward, finish = 0, False
+            done = (
+                self.curr_path_length >= self.max_episode_length
+                or finish
+                or getattr(self, "terminate", False)
+            )
+            return ob, reward, done, False, {"succeed": finish}
+
+        if self._post_reset_realign_pending:
+            self._stop_async_handoff_hold(block=True)
+            self._update_currpos()
+            self.cmd_pose = self.currpos.copy()
+            self.nextpos = self.currpos.copy()
+            self._post_reset_realign_pending = False
+            if self.reset_handoff_drop_first_control_step:
+                gripper_action = (
+                    (action[6] if action.shape[0] > 6 else 0.0)
+                    * self.action_scale[2]
+                )
+                self._send_gripper_command(gripper_action)
+                self._hold_post_reset_target_once()
+                self.curr_path_length += 1
+                ob = self._get_obs()
+                reward, finish = 0, False
+                done = (
+                    self.curr_path_length >= self.max_episode_length
+                    or finish
+                    or getattr(self, "terminate", False)
+                )
+                return ob, reward, done, False, {"succeed": finish}
+
+        self._stop_async_handoff_hold(block=True)
 
         # 1. 确保指令目标状态被正确初始化 (阻断 IK/FK 累积误差)
         if not hasattr(self, "cmd_pose"):
@@ -1160,9 +1273,15 @@ class TianjiEnv(gym.Env):
             sleep_dt = max(0.0, next_tick - time.perf_counter())
             if sleep_dt > 0:
                 time.sleep(sleep_dt)
+        print("interpolate_move_waypoints插值结束")
+        # time.sleep(1.0)
+        print("interpolate_move_waypoints插值结束并sleep结束")
         self.nextpos = targets[-1].copy()
+        print("更新self.nextpos ")
         self.cmd_pose = self.nextpos.copy()
+        print("更新self.cmd_pose ")
         self._update_currpos()
+        print("运行update currentpos")
 
     def interpolate_joint_move(
         self,
@@ -1459,6 +1578,7 @@ class TianjiEnv(gym.Env):
 
     def reset(self, joint_reset=False, replay_start_pose=None, **kwargs):
         self._enter_reset_motion_mode(reason="TianjiEnv.reset")
+        restored_mode = False
         try:
             self._stop_async_handoff_hold()
             self.last_gripper_act = time.time()
@@ -1484,18 +1604,24 @@ class TianjiEnv(gym.Env):
             # 否则第二轮开始时，IK 收到的依然是你第一轮压到很低位置的旧指令，导致起步抽搐！
             self.cmd_pose = self.currpos.copy()
             self.nextpos = self.currpos.copy()
-            self._pause_with_hold(
-                self.reset_handoff_hold_sec,
-                reason="reset handoff to step",
-            )
-            self._start_async_handoff_hold(max_sec=self.reset_handoff_max_sec)
+            # self._capture_post_reset_hold_target()
+            self._post_reset_realign_pending = True
+            # 先恢复到运行阶段控制模式，再做交接 hold，避免“reset return 后 finally 才切模式”的短暂掉力感
+            # self._restore_control_mode_after_reset(reason="TianjiEnv.reset pre_handoff")
+            restored_mode = True
+            # self._pause_with_hold(
+            #     self.reset_handoff_hold_sec,
+            #     reason="reset handoff to step",
+            # )
+            # self._start_async_handoff_hold(max_sec=self.reset_handoff_max_sec)
             
             obs = self._get_obs()
             self.terminate = False
             self.max_distance = None
             return obs, {}
         finally:
-            self._restore_control_mode_after_reset(reason="TianjiEnv.reset")
+            if not restored_mode:
+                self._restore_control_mode_after_reset(reason="TianjiEnv.reset")
 
     def save_video_recording(self):
         try:

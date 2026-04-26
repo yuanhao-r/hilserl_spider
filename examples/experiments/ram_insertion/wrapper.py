@@ -243,14 +243,14 @@ class RAMEnv(BaseRAMRobotEnv):
                         timeout=max(0.2, chained_timeout),
                         is_reset=True,
                     )
-                    if self.randomreset:
-                        self._wait_stable(
-                            after_random_dwell, reason="RAM go_to_reset after random"
-                        )
-                    else:
-                        self._wait_stable(
-                            after_reset_dwell, reason="RAM go_to_reset after reset"
-                        )
+                    # if self.randomreset:
+                    #     self._wait_stable(
+                    #         after_random_dwell, reason="RAM go_to_reset after random"
+                    #     )
+                    # else:
+                    #     self._wait_stable(
+                    #         after_reset_dwell, reason="RAM go_to_reset after reset"
+                    #     )
                     return
 
             # 回退逻辑：分段执行（保留旧逻辑兜底）
@@ -534,8 +534,8 @@ class RAMEnv(BaseRAMRobotEnv):
 
     def reset(self, joint_reset=False, replay_start_pose=None, **kwargs):
         if hasattr(self, "_enter_reset_motion_mode"):
-            self._enter_reset_motion_mode(reason="RAMEnv.reset")
-        try:
+            # self._enter_reset_motion_mode(reason="RAMEnv.reset")
+        # try:
             if hasattr(self, "_stop_async_handoff_hold"):
                 self._stop_async_handoff_hold()
             if hasattr(self, "_debug_log"):
@@ -573,27 +573,27 @@ class RAMEnv(BaseRAMRobotEnv):
             if self.force_sensor is not None:
                 self.force_sensor.reset_baseline()
             self._update_currpos()
-            if hasattr(self, "_ensure_safety_box_contains_key_poses"):
-                self._ensure_safety_box_contains_key_poses(reason="ram_reset")
-            # 复位后把控制目标与当前位置强制对齐，避免下一拍沿旧目标跳变
-            self.cmd_pose = self.currpos.copy()
-            self.nextpos = self.currpos.copy()
-            self._wait_stable(
-                float(getattr(self.config, "RESET_HANDOFF_HOLD_SEC", 0.10)),
-                reason="ram reset handoff to step",
-            )
-            if hasattr(self, "_start_async_handoff_hold"):
-                self._start_async_handoff_hold(
-                    max_sec=float(getattr(self.config, "RESET_HANDOFF_MAX_SEC", 1.0))
-                )
-            if hasattr(self, "_mark_ik_seed_refresh"):
-                self._mark_ik_seed_refresh("RAMEnv.reset exit")
-            if hasattr(self, "debug_dump_recent_joint_samples"):
-                self.debug_dump_recent_joint_samples(reason="ram_reset_exit", window=3)
+            # if hasattr(self, "_ensure_safety_box_contains_key_poses"):
+            #     self._ensure_safety_box_contains_key_poses(reason="ram_reset")
+            # # 复位后把控制目标与当前位置强制对齐，避免下一拍沿旧目标跳变
+            # self.cmd_pose = self.currpos.copy()
+            # self.nextpos = self.currpos.copy()
+            # self._wait_stable(
+            #     float(getattr(self.config, "RESET_HANDOFF_HOLD_SEC", 0.10)),
+            #     reason="ram reset handoff to step",
+            # )
+            # if hasattr(self, "_start_async_handoff_hold"):
+            #     self._start_async_handoff_hold(
+            #         max_sec=float(getattr(self.config, "RESET_HANDOFF_MAX_SEC", 1.0))
+            #     )
+            # if hasattr(self, "_mark_ik_seed_refresh"):
+            #     self._mark_ik_seed_refresh("RAMEnv.reset exit")
+            # if hasattr(self, "debug_dump_recent_joint_samples"):
+            #     self.debug_dump_recent_joint_samples(reason="ram_reset_exit", window=3)
             obs = self._get_obs()
             self.terminate = False
             self.max_distance = None
             return obs, {}
-        finally:
-            if hasattr(self, "_restore_control_mode_after_reset"):
-                self._restore_control_mode_after_reset(reason="RAMEnv.reset")
+        # finally:
+        #     if hasattr(self, "_restore_control_mode_after_reset"):
+                # self._restore_control_mode_after_reset(reason="RAMEnv.reset")

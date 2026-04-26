@@ -205,6 +205,27 @@ class DualQuat2EulerWrapper(gym.ObservationWrapper):
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
         return self.observation(obs), info
+class SleepEnv(gym.ActionWrapper):
+    """
+    Use this wrapper to task that requires the gripper to be closed
+    """
+    control_time: float = 0.1
+    def __init__(self, env, control_time=0.1):
+        super().__init__(env)
+        self.cur_time = time.time()
+        self.control_time = control_time
+
+    def step(self, action):
+        step_time = time.time() - self.cur_time
+        if step_time < self.control_time:
+            time.sleep( self.control_time - step_time )
+        
+        obs, rew, done, truncated, info = self.env.step(action)
+        self.cur_time = time.time()
+        return obs, rew, done, truncated, info
+    
+    def reset(self, **kwargs):
+        return self.env.reset(**kwargs)
 
 class GripperCloseEnv(gym.ActionWrapper):
     """
@@ -270,14 +291,19 @@ class SpacemouseIntervention(gym.ActionWrapper):
         )
         cfg_debug_twitch = None
         cfg_debug_axis_map = None
+        cfg_post_reset_hold_steps = None
         try:
             base_env = self.env.unwrapped
             cfg = getattr(base_env, "config", None)
             cfg_debug_twitch = getattr(cfg, "DEBUG_TWITCH", None)
             cfg_debug_axis_map = getattr(cfg, "DEBUG_SPACEMOUSE_AXIS_MAP", None)
+            cfg_post_reset_hold_steps = getattr(
+                cfg, "SPACEMOUSE_POST_RESET_HOLD_STEPS", None
+            )
         except Exception:
             cfg_debug_twitch = None
             cfg_debug_axis_map = None
+            cfg_post_reset_hold_steps = None
         self.debug_twitch = (
             env_debug_twitch if cfg_debug_twitch is None else bool(cfg_debug_twitch)
         )
@@ -286,6 +312,13 @@ class SpacemouseIntervention(gym.ActionWrapper):
             if cfg_debug_axis_map is None
             else bool(cfg_debug_axis_map)
         )
+        self.post_reset_hold_steps = int(
+            os.environ.get(
+                "HILSERL_SPACEMOUSE_POST_RESET_HOLD_STEPS",
+                0 if cfg_post_reset_hold_steps is None else int(cfg_post_reset_hold_steps),
+            )
+        )
+        self._post_reset_hold_remaining = 0
         self._axis_map_printed = False
         
         self.pause_control = False
@@ -361,7 +394,12 @@ class SpacemouseIntervention(gym.ActionWrapper):
             intervened = False
 
         if intervened:
+            self._post_reset_hold_remaining = 0
             return expert_a, True
+
+        if self._post_reset_hold_remaining > 0:
+            self._post_reset_hold_remaining -= 1
+            return np.zeros_like(action), False
 
         return action, False
 
@@ -407,6 +445,11 @@ class SpacemouseIntervention(gym.ActionWrapper):
             time.sleep(1.0)
         
         return obs, rew, done, truncated, info
+
+    def reset(self, **kwargs):
+        obs, info = self.env.reset(**kwargs)
+        self._post_reset_hold_remaining = max(0, int(self.post_reset_hold_steps))
+        return obs, info
     
 class ReplayIntervention(gym.ActionWrapper):
     def __init__(self, env, replay_file_list: list, action_scale=(1, 1, 1)):

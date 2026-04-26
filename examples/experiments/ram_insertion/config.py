@@ -11,6 +11,7 @@ from franka_env.envs.wrappers import (
     GripperCloseEnv,
     HumanClassifierWrapper,
     ReplayIntervention,
+    SleepEnv,
 )
 from franka_env.envs.relative_env import RelativeFrame
 from serl_launcher.wrappers.serl_obs_wrappers import SERLObsWrapper
@@ -42,19 +43,23 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
             ).resolve()
         )
         REALSENSE_CAMERAS = {
+            "wrist_1": {
+                "camera_type": "orbbec",
+                "dim": (1280, 720),
+            },
             # "wrist_1": {
-            #     "camera_type": "orbbec",
+            #     "camera_index": 0,
             #     "dim": (1280, 720),
             # },
             "wrist_2": {
-                "camera_index": 12,
+                "camera_index": 2,
                 "dim": (1280, 720),
             },
         }
         IMAGE_CROP = {
-            "wrist_1": lambda img: img[340:660, 480:800],
+            # "wrist_1": lambda img: img[264:677, 447:884],
             # "wrist_2": lambda img: img[40:360, 520:840],
-            "wrist_2": lambda img: img[37:683, 442:870],
+            "wrist_2": lambda img: img[0:390, 478:896],
         }
         WOWSKIN_PORT = None
         # Tianji task poses use [x, y, z, rx, ry, rz], where xyz are in mm here
@@ -65,16 +70,19 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
         RESET_POSE_MM = np.zeros((6,), dtype=np.float64)
 
         # 1. 抓取点 / 插入完成点 (使用你测试过的坐标)
-        TARGET_JOINTS = np.array([14.235408,13.679455,-10.149516,-87.121804,-1.975588,-16.469359,7.192518], dtype=np.float64)
+        TARGET_JOINTS = np.array([ -120.04,   78.18,   68.03, -102.17,   75.23,  -16.70,   40.34  ], dtype=np.float64)
         # GRASP_JOINTS = np.array([-8.655314,-70.119028,-80.595401,-48.706882,49.187142,-19.077660,26.062595], dtype=np.float64)
         
         # 2. 抓取点正上方 (请务必用示教器把机械臂提起到内存槽正上方，并把那时的关节角填到这里！)
         # (这里暂时填的复位点做示范，请一定修改为你实际的正上方安全点)
-        TOP_JOINTS = np.array([-48.876438,19.113743,50.679637,-83.718879,15.972007,-18.156286,8.635611], dtype=np.float64)
+        TOP_JOINTS = np.array([-114.27,   80.24,   66.96, -100.51,   77.35,  -18.47,   48.21], dtype=np.float64)
         
         # 3. 初始复位待命点
-        RESET_JOINTS = np.array([-28.387604,18.155519,32.549613,-82.773040,16.131870,-25.223186,5.343436], dtype=np.float64)
+        # RESET_JOINTS = np.array([ -6.09,   23.71,  -16.85, -103.77,   -5.87,   -8.51,  -24.22], dtype=np.float64)
+        RESET_JOINTS = np.array([ -114.27,   80.24,   66.96, -100.51,   77.35,  -18.47,   48.21], dtype=np.float64)
 
+        CONTROL_HZ = 10
+        CONTROL_TIME = 1 / CONTROL_HZ
 
         TARGET_POSE = TARGET_POSE_MM.copy()
         GRASP_POSE = GRASP_POSE_MM.copy()
@@ -88,13 +96,13 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
         # 2) 姿态被夹到边界后出现倾斜
         # 3) SpaceMouse 往回拉时被边界限制
         ABS_POSE_LIMIT_LOW = np.array(
-            [0.7505, -0.3323, 0.5230, -np.pi, -np.pi, -np.pi], dtype=np.float64
+            [0.7505, -0.1617, 0.5230, -np.pi, -np.pi, -np.pi], dtype=np.float64
         )
         ABS_POSE_LIMIT_HIGH = np.array(
-            [0.8005, -0.2923, 0.6230, np.pi, np.pi, np.pi], dtype=np.float64
+            [0.8005, -0.08217, 0.6230, np.pi, np.pi, np.pi], dtype=np.float64
         )
         REWARD_THRESHOLD = 0.001
-        RANDOM_RESET = True
+        RANDOM_RESET = False
         # 兼容旧参数：若未配置 RANDOM_X_RANGE/Y_RANGE，则沿用 RANDOM_XY_RANGE
         RANDOM_XY_RANGE = 0.03
         # 推荐使用按轴独立随机范围，便于避开“前方柱子”
@@ -115,13 +123,15 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
         RANDOM_Z_BIAS = 0.0
         RANDOM_RZ_RANGE = 0.0
         RANDOM_KEEP_TOOL_ORIENTATION = True
-        RANDOM_RESET_TIMEOUT = 1.0
+        RANDOM_RESET_TIMEOUT = 0.5
         AUTO_QUICK_REGRASP = True
         # RL 探索速度（平移、旋转、夹爪）
-        ACTION_SCALE = (0.005, 0.0, 1)
+        ACTION_SCALE = (0.01, 0.0, 1)
         # SpaceMouse 介入时的额外缩放（会叠加到 ACTION_SCALE 上）
         SPACEMOUSE_LINEAR_SCALE = 1.0
         SPACEMOUSE_ANGULAR_SCALE = 1.0
+        # reset 结束后前几帧若尚未检测到 SpaceMouse 介入，则先发零动作，避免交接瞬间掉一下
+        SPACEMOUSE_POST_RESET_HOLD_STEPS = 105
         # 调试日志开关（强制关闭 TWITCH 日志）
         DEBUG_TWITCH = False
         DEBUG_TWITCH_RING = 80
@@ -129,18 +139,18 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
         DEBUG_SPACEMOUSE_AXIS_MAP = True
         # 夹爪时序：第一轮等待更久，避免未完全张开就下探
         GRIPPER_OPEN_WAIT_SEC = 1.0
-        FIRST_ROUND_GRIPPER_OPEN_WAIT_SEC = 2.8
+        FIRST_ROUND_GRIPPER_OPEN_WAIT_SEC = 3.2
         # 抓取后从 TARGET_JOINTS 提起到 TOP_JOINTS 时，使用笛卡尔直线插值
         LINEAR_LIFT_TARGET_TO_TOP = True
-        LINEAR_LIFT_TIMEOUT = 1.5
+        LINEAR_LIFT_TIMEOUT = 1.0
         # 从 TOP_JOINTS 下降到 TARGET_JOINTS 也使用笛卡尔直线
         LINEAR_DROP_TOP_TO_TARGET = True
-        LINEAR_DROP_TIMEOUT = 1.5
+        LINEAR_DROP_TIMEOUT = 1.0
         # 首轮通常载荷/状态突变更大，放慢动作避免冲击反弹
-        FIRST_ROUND_MOTION_TIMEOUT_SCALE = 2.0
+        FIRST_ROUND_MOTION_TIMEOUT_SCALE = 2.2
         # reset 轨迹平滑参数（不影响 RL step 主频）
-        INTERPOLATE_HZ = 40.0
-        INTERPOLATE_MAX_STEP_DEG = 0.7
+        INTERPOLATE_HZ = 60.0
+        INTERPOLATE_MAX_STEP_DEG = 1.2
         INTERPOLATE_MAX_POS_STEP_M = 0.0025
         INTERPOLATE_MAX_ROT_STEP_RAD = 0.025
         INTERPOLATE_EASE = True
@@ -155,16 +165,19 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
         RESET_CONTINUOUS_MODE = True
         RESET_INTERMEDIATE_SETTLE = False
         RESET_FINAL_SETTLE_TIMEOUT = 0.12
-        RESET_HANDOFF_HOLD_SEC = 0.10
+        RESET_HANDOFF_HOLD_SEC = 0.18
         RESET_ASYNC_HANDOFF_HOLD = True
-        RESET_HANDOFF_MAX_SEC = 1.5
-        RESET_HANDOFF_HZ = 80.0
+        RESET_HANDOFF_MAX_SEC = 2.2
+        RESET_HANDOFF_HZ = 160.0
+        RESET_HANDOFF_ZERO_ACTION_EPS = 1e-6
+        RESET_HANDOFF_UNLOCK_ACTION_EPS = 0.002
+        RESET_HANDOFF_DROP_FIRST_CONTROL_STEP = True
         # 将 TOP->RESET->RANDOM 作为一条连续 waypoint 轨迹下发，减少中间点顿挫/下垂
         RESET_CHAINED_WAYPOINT_MOTION = True
-        RESET_CHAINED_TIMEOUT = 3.0
+        RESET_CHAINED_TIMEOUT = 1.0
         # 夹爪闭合后从 TARGET 连续衔接到 TOP->RESET->RANDOM，避免 TARGET->TOP 到点停顿
         CHAIN_FROM_TARGET_AFTER_GRASP = True
-        RESET_CHAINED_FROM_TARGET_TIMEOUT_SCALE = 1.35
+        RESET_CHAINED_FROM_TARGET_TIMEOUT_SCALE = 1.0
         # quick_regrasp 结束后若已在 TOP 附近，则 reset 流程不再重复经过 TOP
         TOP_REVISIT_THRESHOLD_M = 0.004
         # 宏观复位阶段优先用位置模式，结束后恢复阻抗模式供 RL 控制
@@ -179,21 +192,21 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
         RESET_TOP_TO_RESET_TIMEOUT = 2.0
         # 关键点之间额外停顿（建议保持 0，避免“到点下垂”）
         RESET_REPLAY_ALIGN_DWELL_SEC = 0.0
-        RESET_AFTER_RESET_DWELL_SEC = 0.0
-        RESET_AFTER_RANDOM_DWELL_SEC = 0.0
+        RESET_AFTER_RESET_DWELL_SEC = 1.0
+        RESET_AFTER_RANDOM_DWELL_SEC = 1.0
         QUICK_REGRASP_DWELL_TOP_SEC = 0.0
         QUICK_REGRASP_DWELL_TARGET_SEC = 0.0
         QUICK_REGRASP_DWELL_FINAL_TOP_SEC = 0.0
         # 右臂(B)抗下坠阻抗增强（负载抓取工况）
         RESET_APPLY_CUSTOM_IMPEDANCE = True
         RESET_IMPEDANCE_TARGET_ARM = "B"
-        RESET_IMPEDANCE_JOINT_K = [3.4, 3.4, 3.9, 2.6, 1.95, 1.95, 1.75]
-        RESET_IMPEDANCE_JOINT_D = [0.62, 0.62, 0.70, 0.50, 0.42, 0.42, 0.38]
-        RESET_IMPEDANCE_CART_K = [3400, 3400, 5200, 95, 95, 95, 40]
-        RESET_IMPEDANCE_CART_D = [0.38, 0.38, 0.54, 0.78, 0.78, 0.78, 1.6]
-        RESET_IMPEDANCE_CART_D_SECONDARY = [1.6, 1.6, 1.9, 1.35, 1.35, 1.35, 1.35]
+        RESET_IMPEDANCE_JOINT_K = [2.9, 2.9, 3.3, 2.2, 1.65, 1.65, 1.45]
+        RESET_IMPEDANCE_JOINT_D = [0.84, 0.84, 0.95, 0.68, 0.58, 0.58, 0.52]
+        RESET_IMPEDANCE_CART_K = [2800, 2800, 4300, 78, 78, 78, 32]
+        RESET_IMPEDANCE_CART_D = [0.62, 0.62, 0.78, 0.92, 0.92, 0.92, 2.2]
+        RESET_IMPEDANCE_CART_D_SECONDARY = [2.2, 2.2, 2.6, 1.8, 1.8, 1.8, 1.8]
         DISPLAY_IMAGE = True
-        MAX_EPISODE_LENGTH = 1000
+        MAX_EPISODE_LENGTH = 200
         BASIC_JOINT_RESET = np.array(
             [45.0, -60.0, -8.0, -57.0, 5.0, -5.0, 5.0], dtype=np.float64
         )
@@ -238,7 +251,7 @@ else:
         RANDOM_RZ_RANGE = 0.0
         AUTO_QUICK_REGRASP = True
         ACTION_SCALE = (0.01, 0.0, 1)
-        SPACEMOUSE_LINEAR_SCALE = 1.0
+        SPACEMOUSE_LINEAR_SCALE = 3.0
         SPACEMOUSE_ANGULAR_SCALE = 1.0
         DISPLAY_IMAGE = True
         MAX_EPISODE_LENGTH = 1000
@@ -296,9 +309,11 @@ class TrainConfig(DefaultTrainingConfig):
     checkpoint_period = 2000
     steps_per_update = 50
     encoder_type = "resnet-pretrained"
-    resnet_param_fixed: bool = False
+    # resnet_param_fixed: bool = False
+    resnet_param_fixed: bool = True
     setup_mode = "single-arm-fixed-gripper"
 
+    
     def get_environment(self, fake_env=False, save_video=False, classifier=False, replay_intervention_files=None):
         env_config = EnvConfig()
         self.image_keys = list(env_config.REALSENSE_CAMERAS.keys())
@@ -308,6 +323,7 @@ class TrainConfig(DefaultTrainingConfig):
             save_video=save_video,
             config=env_config,
         )
+        # env = SleepEnv(env, control_time=env_config.CONTROL_TIME)
         env = GripperCloseEnv(env)
         if not fake_env:
             if replay_intervention_files is not None:
@@ -315,10 +331,11 @@ class TrainConfig(DefaultTrainingConfig):
             env = SpacemouseIntervention(
                 env,
                 gripper_control=False,
-                deadband=0.05,
+                deadband=0.002,
                 expert_linear_scale=getattr(env_config, "SPACEMOUSE_LINEAR_SCALE", 1.0),
                 expert_angular_scale=getattr(env_config, "SPACEMOUSE_ANGULAR_SCALE", 1.0),
             )
+        env = SleepEnv(env, control_time=env_config.CONTROL_TIME)
         env = RelativeFrame(env)
         env = Quat2EulerWrapper(env)
         env = SERLObsWrapper(env, proprio_keys=self.proprio_keys)

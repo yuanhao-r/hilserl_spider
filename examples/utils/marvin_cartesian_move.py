@@ -62,7 +62,7 @@ CONFIG_FILE = os.path.join(root_dir, 'DEMO_PYTHON', 'ccs_m6_40.MvKDCfg')
 # X, Y, Z: 位置（单位：毫米 mm）
 # A, B, C: 欧拉角（单位：度 degree）
 # 请根据实际情况修改目标位姿
-TARGET_XYZABC = [342.22, -12.96+10+100, 562.81, 112.18,  89.49, 108.80 ]
+TARGET_XYZABC = [327.30-100,-155.83+20+80, 505.91,  -7.77,  88.59, -11.29]
 # TARGET_XYZABC = [0.0, 0.0, 870.49, 0.0, 0.0, 0.0]
 
 VEL_RATIO = 10  # 速度百分比（安全起见，调试时使用较小值）

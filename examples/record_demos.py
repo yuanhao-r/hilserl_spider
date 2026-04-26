@@ -43,10 +43,24 @@ def main(_):
     pbar = tqdm(total=success_needed)
     trajectory = []
     returns = 0
+    episode_count = 0
     
+    LOOP_DURATION = 0.1
+
     while success_count < success_needed:
+        loop_start_time = time.time()
+
         actions = np.zeros(env.action_space.sample().shape) 
+        time1 = time.time()
         next_obs, rew, done, truncated, info = env.step(actions)
+        # print("original STEP-TIME = ",time.time()-time1,flush=True)
+        # elapsed = time.time() - loop_start_time
+        # if elapsed < LOOP_DURATION:
+        #     # 如果运行太快，就睡够剩下的时间
+        #     time.sleep(LOOP_DURATION - elapsed)
+        
+        # # 打印整个 STEP 的总耗时（现在应该是 0.1s 左右）
+        # print(f"now STEP-TIME = {time.time() - loop_start_time:.4f}s", flush=True)
         returns += rew
         if "intervene_action" in info:
             actions = info["intervene_action"]
@@ -67,15 +81,27 @@ def main(_):
 
         obs = next_obs
         if done:
-            if info["succeed"]:
+            episode_count += 1
+            episode_steps = len(trajectory)
+            episode_success = bool(info.get("succeed", False))
+
+            if episode_success:
                 for transition in trajectory:
                     transitions.append(copy.deepcopy(transition))
                 success_count += 1
                 pbar.update(1)
+
+            print(
+                f"[Episode {episode_count}] "
+                f"steps={episode_steps}, return={float(returns):.3f}, "
+                f"succeed={episode_success}, truncated={truncated}, "
+                f"successes={success_count}/{success_needed}"
+            )
             trajectory = []
             returns = 0
             obs, info = env.reset()
-            
+            print("RESET-TIME = ",time.time()-time1,flush=True)
+
     if not os.path.exists("./demo_data"):
         os.makedirs("./demo_data")
     uuid = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
