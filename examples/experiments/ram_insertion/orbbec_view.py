@@ -287,11 +287,80 @@ class OrbbecCapture:
     后台线程持续调用 read()，而 go_to_reset 时主线程会调用 get_aligned_frame()，必须用 _lock 串行化，
     否则会出现相机掉线、Device is deactivated/disconnected。
     """
-    def __init__(self, name, dim=(1280, 720)):
+    @staticmethod
+    def list_connected_devices():
+        """
+        列出当前可见的 Orbbec 设备信息，便于按序列号选择。
+        返回: [{"index": i, "serial_number": "...", "name": "..."}]
+        """
+        devices = []
+        try:
+            ctx = ob.Context()
+            device_list = ctx.query_devices()
+            for i in range(device_list.get_count()):
+                dev = device_list.get_device_by_index(i)
+                info = dev.get_device_info()
+                devices.append(
+                    {
+                        "index": i,
+                        "serial_number": info.get_serial_number(),
+                        "name": info.get_name(),
+                    }
+                )
+        except Exception:
+            return []
+        return devices
+
+    @staticmethod
+    def _select_device(serial_number=None, device_index=None):
+        ctx = ob.Context()
+        device_list = ctx.query_devices()
+        count = device_list.get_count()
+        if count <= 0:
+            raise RuntimeError("未检测到 Orbbec 设备，请检查 USB 连接。")
+
+        if serial_number is not None:
+            sn = str(serial_number).strip()
+            if sn == "":
+                raise ValueError("serial_number 为空字符串。")
+            try:
+                return device_list.get_device_by_serial_number(sn)
+            except Exception:
+                for i in range(count):
+                    dev = device_list.get_device_by_index(i)
+                    info = dev.get_device_info()
+                    if info.get_serial_number() == sn:
+                        return dev
+                available = [
+                    device_list.get_device_by_index(i).get_device_info().get_serial_number()
+                    for i in range(count)
+                ]
+                raise RuntimeError(
+                    f"未找到序列号为 {sn} 的 Orbbec 设备。当前可用设备: {available}"
+                )
+
+        if device_index is None:
+            idx = 0
+        else:
+            idx = int(device_index)
+        if idx < 0 or idx >= count:
+            raise RuntimeError(
+                f"device_index={idx} 越界，当前设备数量={count}（有效范围: 0~{count - 1}）。"
+            )
+        return device_list.get_device_by_index(idx)
+
+    def __init__(self, name, dim=(1280, 720), serial_number=None, device_index=None):
         self.name = name
         self.dim = dim
         self._lock = threading.Lock()
-        self._pipeline = Pipeline()
+        selected_device = None
+        if serial_number is not None or device_index is not None:
+            selected_device = self._select_device(
+                serial_number=serial_number, device_index=device_index
+            )
+            self._pipeline = Pipeline(selected_device)
+        else:
+            self._pipeline = Pipeline()
         config = Config()
         try:
             profile_list = self._pipeline.get_stream_profile_list(OBSensorType.COLOR_SENSOR)
@@ -316,7 +385,14 @@ class OrbbecCapture:
         # 预热
         for _ in range(30):
             self._pipeline.wait_for_frames(100)
-        print("OrbbecCapture (wrist_1) 已启动")
+        if selected_device is not None:
+            info = selected_device.get_device_info()
+            print(
+                "OrbbecCapture (wrist_1) 已启动: "
+                f"name={info.get_name()} serial={info.get_serial_number()}"
+            )
+        else:
+            print("OrbbecCapture (wrist_1) 已启动")
 
     def _get_one_frame(self, timeout_ms=500):
         """取一帧对齐后的 color + depth，返回 (color_bgr, aligned_depth_frame, frame_data) 或 (None, None, None)。"""

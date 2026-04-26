@@ -45,6 +45,10 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
         REALSENSE_CAMERAS = {
             "wrist_1": {
                 "camera_type": "orbbec",
+                # 多台 Orbbec 时建议固定 serial_number，避免枚举顺序变化。
+                "serial_number": "CPCV5530014V",
+                # 也可用 device_index（0/1/2...），但不如 serial 稳定。
+                # "device_index": 0,
                 "dim": (1280, 720),
             },
             # "wrist_1": {
@@ -52,14 +56,14 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
             #     "dim": (1280, 720),
             # },
             "wrist_2": {
-                "camera_index": 2,
+                "camera_index": 0,
                 "dim": (1280, 720),
             },
         }
         IMAGE_CROP = {
-            # "wrist_1": lambda img: img[264:677, 447:884],
+            "wrist_1": lambda img: img[5:195, 600:835],
             # "wrist_2": lambda img: img[40:360, 520:840],
-            "wrist_2": lambda img: img[0:390, 478:896],
+            "wrist_2": lambda img: img[191:656, 295:787],
         }
         WOWSKIN_PORT = None
         # Tianji task poses use [x, y, z, rx, ry, rz], where xyz are in mm here
@@ -70,16 +74,16 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
         RESET_POSE_MM = np.zeros((6,), dtype=np.float64)
 
         # 1. 抓取点 / 插入完成点 (使用你测试过的坐标)
-        TARGET_JOINTS = np.array([ -120.04,   78.18,   68.03, -102.17,   75.23,  -16.70,   40.34  ], dtype=np.float64)
+        TARGET_JOINTS = np.array([ 79.62,   36.48,  -91.89, -113.62,  -39.47,   16.09,    2.50], dtype=np.float64)
         # GRASP_JOINTS = np.array([-8.655314,-70.119028,-80.595401,-48.706882,49.187142,-19.077660,26.062595], dtype=np.float64)
         
         # 2. 抓取点正上方 (请务必用示教器把机械臂提起到内存槽正上方，并把那时的关节角填到这里！)
         # (这里暂时填的复位点做示范，请一定修改为你实际的正上方安全点)
-        TOP_JOINTS = np.array([-114.27,   80.24,   66.96, -100.51,   77.35,  -18.47,   48.21], dtype=np.float64)
+        TOP_JOINTS = np.array([ 80.53,   24.99,  -92.68, -117.59,  -28.43,   22.15,    0.49], dtype=np.float64)
         
         # 3. 初始复位待命点
         # RESET_JOINTS = np.array([ -6.09,   23.71,  -16.85, -103.77,   -5.87,   -8.51,  -24.22], dtype=np.float64)
-        RESET_JOINTS = np.array([ -114.27,   80.24,   66.96, -100.51,   77.35,  -18.47,   48.21], dtype=np.float64)
+        RESET_JOINTS = np.array([ 80.53,   24.99,  -92.68, -117.59,  -28.43,   22.15,    0.49], dtype=np.float64)
 
         CONTROL_HZ = 10
         CONTROL_TIME = 1 / CONTROL_HZ
@@ -102,7 +106,7 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
             [0.8005, -0.08217, 0.6230, np.pi, np.pi, np.pi], dtype=np.float64
         )
         REWARD_THRESHOLD = 0.001
-        RANDOM_RESET = False
+        RANDOM_RESET = True
         # 兼容旧参数：若未配置 RANDOM_X_RANGE/Y_RANGE，则沿用 RANDOM_XY_RANGE
         RANDOM_XY_RANGE = 0.03
         # 推荐使用按轴独立随机范围，便于避开“前方柱子”
@@ -111,10 +115,10 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
         RANDOM_Z_RANGE = 0.0
         # 可选：定向限制（单位 m）
         # 例如若“向前”为 +x，可把 RANDOM_DX_MAX 设小一些，减少前探碰撞
-        RANDOM_DX_MIN = -0.02
-        RANDOM_DX_MAX = 0.005
-        RANDOM_DY_MIN = -0.01
-        RANDOM_DY_MAX = 0.01
+        RANDOM_DX_MIN = -0.015
+        RANDOM_DX_MAX = 0.015
+        RANDOM_DY_MIN = -0.015
+        RANDOM_DY_MAX = 0.015
         RANDOM_DZ_MIN = 0.0
         RANDOM_DZ_MAX = 0.0
         # 可选：整体偏置（单位 m）
@@ -131,7 +135,7 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
         SPACEMOUSE_LINEAR_SCALE = 1.0
         SPACEMOUSE_ANGULAR_SCALE = 1.0
         # reset 结束后前几帧若尚未检测到 SpaceMouse 介入，则先发零动作，避免交接瞬间掉一下
-        SPACEMOUSE_POST_RESET_HOLD_STEPS = 105
+        SPACEMOUSE_POST_RESET_HOLD_STEPS = 0
         # 调试日志开关（强制关闭 TWITCH 日志）
         DEBUG_TWITCH = False
         DEBUG_TWITCH_RING = 80

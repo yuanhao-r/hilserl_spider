@@ -88,7 +88,12 @@ class RAMEnv(BaseRAMRobotEnv):
                     raise RuntimeError(
                         "wrist_1 配置为 orbbec，但 OrbbecCapture 导入失败。请确保已安装 pyorbbecsdk： pip install pyorbbecsdk2"
                     )
-                cap_inner = orbbec_cap_cls(name=cam_name, dim=kwargs.get("dim", (1280, 720)))
+                cap_inner = orbbec_cap_cls(
+                    name=cam_name,
+                    dim=kwargs.get("dim", (1280, 720)),
+                    serial_number=kwargs.get("serial_number"),
+                    device_index=kwargs.get("device_index", kwargs.get("camera_index")),
+                )
                 self.cap[cam_name] = VideoCapture(cap_inner)
                 self._orbbec_capture = cap_inner
             elif "camera_index" in kwargs:

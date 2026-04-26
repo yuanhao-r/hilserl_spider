@@ -1,0 +1,32 @@
+[04/24 14:56:52.826646][error][2058265][UsbEnumeratorLibusb.cpp:166] Failed to get string descriptor 3: error=Operation timed out
+[04/24 14:56:52.826684][error][2058265][UsbEnumeratorLibusb.cpp:436] Failed to query USB device interface name. SN: CPCV5530014V
+[04/24 14:56:52.827314][info][2058265][LinuxUsbPal.cpp:335] Create PollingDeviceWatcher!
+[04/24 14:56:52.827323][info][2058265][DeviceManager.cpp:25] Current found device(s): (2)
+[04/24 14:56:52.827324][info][2058265][DeviceManager.cpp:34] 	- Name: Gemini 336, PID: 0x0803, SN/ID: CP769450008K, Connection: USB3.2
+[04/24 14:56:52.827326][info][2058265][DeviceManager.cpp:34] 	- Name: Gemini 336L, PID: 0x0807, SN/ID: CPCV5530014V, Connection: USB2.1
+[04/24 14:56:52.827327][info][2058265][DeviceManager.cpp:339] Enable net device enumeration: true
+[04/24 14:56:54.842316][info][2058265][DeviceManager.cpp:25] Current device(s) list: (2)
+[04/24 14:56:54.842345][info][2058265][DeviceManager.cpp:34] 	- Name: Gemini 336, PID: 0x0803, SN/ID: CP769450008K, Connection: USB3.2
+[04/24 14:56:54.842348][info][2058265][DeviceManager.cpp:34] 	- Name: Gemini 336L, PID: 0x0807, SN/ID: CPCV5530014V, Connection: USB2.1
+[04/24 14:56:54.898658][info][2058265][DeviceBase.cpp:651] key: AppSlot,value:1
+[04/24 14:56:54.898675][info][2058265][DeviceBase.cpp:651] key: HwType,value:R1
+[04/24 14:56:54.898677][info][2058265][DeviceBase.cpp:651] key: HwVer,value:V1.1
+[04/24 14:56:54.898678][info][2058265][DeviceBase.cpp:651] key: IspFwVer,value:20241125
+[04/24 14:56:54.898679][info][2058265][DeviceBase.cpp:651] key: IspNeedVer,value:20241125
+[04/24 14:56:54.898680][info][2058265][DeviceBase.cpp:651] key: PresetVer,value:1.1.9
+[04/24 14:56:55.054947][info][2058265][DeviceManager.cpp:194] Device created successfully! Name: Gemini 336, PID: 0x0803, SN/ID: CP769450008K FW: 1.4.60
+[04/24 14:56:55.056849][info][2058265][DeviceBase.cpp:651] key: AppSlot,value:2
+[04/24 14:56:55.056855][info][2058265][DeviceBase.cpp:651] key: HwType,value:L2
+[04/24 14:56:55.056857][info][2058265][DeviceBase.cpp:651] key: HwVer,value:V1.1
+[04/24 14:56:55.056858][info][2058265][DeviceBase.cpp:651] key: IspFwVer,value:20241125
+[04/24 14:56:55.056859][info][2058265][DeviceBase.cpp:651] key: IspNeedVer,value:20241125
+[04/24 14:56:55.056859][info][2058265][DeviceBase.cpp:651] key: PresetVer,value:1.1.9
+[04/24 14:56:55.217627][info][2058265][DeviceManager.cpp:194] Device created successfully! Name: Gemini 336L, PID: 0x0807, SN/ID: CPCV5530014V FW: 1.4.60
+[04/24 14:56:55.219609][info][2058265][ObLibuvcDevicePort.cpp:87] uvc_close done.
+[04/24 14:56:55.219621][info][2058265][ObLibuvcDevicePort.cpp:88] ~ObLibuvcDevicePort done
+[04/24 14:56:55.223009][info][2058265][ObLibuvcDevicePort.cpp:87] uvc_close done.
+[04/24 14:56:55.223025][info][2058265][ObLibuvcDevicePort.cpp:88] ~ObLibuvcDevicePort done
+[04/24 14:56:55.226528][info][2058265][ObLibuvcDevicePort.cpp:87] uvc_close done.
+[04/24 14:56:55.226538][info][2058265][ObLibuvcDevicePort.cpp:88] ~ObLibuvcDevicePort done
+[04/24 14:57:00.377256][info][2058265][ObLibuvcDevicePort.cpp:87] uvc_close done.
+[04/24 14:57:00.377273][info][2058265][ObLibuvcDevicePort.cpp:88] ~ObLibuvcDevicePort done

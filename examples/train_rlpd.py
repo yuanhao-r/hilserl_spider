@@ -2,6 +2,7 @@
 
 import glob
 import time
+import threading
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -62,6 +63,35 @@ flags.DEFINE_boolean(
     "debug", False, "Debug mode."
 )  # debug mode will disable wandb logging
 
+flags.DEFINE_boolean(
+    "save_local_plots",
+    True,
+    "Save local metric plots (both SVG and PNG) from learner stats callback.",
+)
+flags.DEFINE_string(
+    "local_plot_dir",
+    "",
+    "Directory to save local metric plots. Default: <checkpoint_path>/local_plots",
+)
+flags.DEFINE_multi_string(
+    "local_plot_keys",
+    [
+        "environment/episode/r",
+        "environment/episode/l",
+        "environment/episode/t",
+        "environment/episode/intervention_steps",
+        "environment/episode/intervention_count",
+        "environment/episode/intervention_rate",
+        "task/recent_success_rate",
+    ],
+    "Metric keys to export to local plots.",
+)
+flags.DEFINE_integer(
+    "local_plot_max_points",
+    5000,
+    "Max history points kept per metric for local plotting.",
+)
+
 
 devices = jax.local_devices()
 num_devices = len(devices)
@@ -71,6 +101,106 @@ sharding = NamedSharding(mesh, P())
 
 def print_green(x):
     return print("\033[92m {}\033[00m".format(x))
+
+
+def _flatten_dict(d: dict, parent_key: str = "") -> dict:
+    flat = {}
+    for key, value in d.items():
+        new_key = f"{parent_key}/{key}" if parent_key else str(key)
+        if isinstance(value, dict):
+            flat.update(_flatten_dict(value, new_key))
+        else:
+            flat[new_key] = value
+    return flat
+
+
+def _to_scalar_float(value):
+    if isinstance(value, (bool, int, float, np.number)):
+        return float(value)
+    if isinstance(value, np.ndarray):
+        if value.size == 1:
+            return float(value.reshape(-1)[0])
+        return None
+    return None
+
+
+class LocalMetricPlotter:
+    def __init__(self, output_dir: str, keys: list[str], max_points: int = 5000):
+        self.output_dir = os.path.abspath(output_dir)
+        os.makedirs(self.output_dir, exist_ok=True)
+        self.keys = [str(k) for k in keys] if keys else []
+        self.max_points = max(100, int(max_points))
+        self.history = {k: {"x": [], "y": []} for k in self.keys}
+        self.lock = threading.Lock()
+        self.enabled = True
+        self._plt = None
+        self._load_matplotlib()
+
+    def _load_matplotlib(self):
+        try:
+            import matplotlib
+
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+
+            self._plt = plt
+        except Exception as e:
+            self.enabled = False
+            print(f"[LocalPlotter] disabled: matplotlib import failed: {e}", flush=True)
+
+    @staticmethod
+    def _safe_metric_name(metric_key: str) -> str:
+        return metric_key.replace("/", "__")
+
+    def _trim(self, arr: list):
+        if len(arr) > self.max_points:
+            del arr[: len(arr) - self.max_points]
+
+    def update(self, payload: dict, step: int):
+        if (not self.enabled) or (self._plt is None):
+            return
+        if not isinstance(payload, dict):
+            return
+
+        flat = _flatten_dict(payload)
+        touched = []
+        with self.lock:
+            for key in self.keys:
+                if key not in flat:
+                    continue
+                val = _to_scalar_float(flat[key])
+                if val is None:
+                    continue
+                self.history[key]["x"].append(int(step))
+                self.history[key]["y"].append(val)
+                self._trim(self.history[key]["x"])
+                self._trim(self.history[key]["y"])
+                touched.append(key)
+
+        for key in touched:
+            self._save_metric_plot(key)
+
+    def _save_metric_plot(self, key: str):
+        with self.lock:
+            xs = self.history[key]["x"].copy()
+            ys = self.history[key]["y"].copy()
+        if len(xs) == 0:
+            return
+
+        fig, ax = self._plt.subplots(figsize=(8.0, 4.8), dpi=160)
+        ax.plot(xs, ys, linewidth=1.6)
+        ax.set_title(key)
+        ax.set_xlabel("learner_step")
+        ax.set_ylabel(key.split("/")[-1])
+        ax.grid(True, alpha=0.3)
+        fig.tight_layout()
+
+        safe_name = self._safe_metric_name(key)
+        svg_path = os.path.join(self.output_dir, f"{safe_name}.svg")
+        png_path = os.path.join(self.output_dir, f"{safe_name}.png")
+        fig.savefig(svg_path, format="svg")
+        fig.savefig(png_path, format="png")
+        self._plt.close(fig)
 
 
 ##############################################################################
@@ -93,7 +223,7 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
 
         for episode in range(FLAGS.eval_n_trajs):
             obs, _ = env.reset()
-            obs['state'] *= 0.0
+            # obs['state'] *= 0.0
             done = False
             start_time = time.time()
             while not done:
@@ -106,7 +236,8 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
                 actions = np.asarray(jax.device_get(actions))
 
                 next_obs, reward, done, truncated, info = env.step(actions)
-                next_obs['state'] *= 0.0
+                print("state_rlpd22:",obs['state'],flush=True)
+                # next_obs['state'] *= 0.0
                 obs = next_obs
 
                 if done:
@@ -157,7 +288,8 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
     task_info = {}
 
     obs, _ = env.reset()
-    obs['state'] *= 0.0
+    # obs['state'] *= 0.0
+    print("state_rlpd33:",obs['state'],flush=True)
     done = False
 
     # training loop
@@ -187,7 +319,10 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
         with timer.context("step_env"):
 
             next_obs, reward, done, truncated, info = env.step(actions)
-            next_obs['state'] *= 0.0
+            # next_obs['state'] *= 0.0
+            print_green(f"state_rlpd111{obs['state']}.")
+
+            print("state_rlpd444:",obs['state'],flush=True)
             if "left" in info:
                 info.pop("left")
             if "right" in info:
@@ -231,6 +366,11 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
 
                 info["episode"]["intervention_count"] = intervention_count
                 info["episode"]["intervention_steps"] = intervention_steps
+                ###加入介入率###
+                ep_len = info.get("episode", {}).get("l", 0)
+                ep_len = int(np.asarray(ep_len).reshape(-1)[0]) if np.size(ep_len) else int(ep_len)
+                info["episode"]["intervention_rate"] = float(intervention_steps) / max(1, ep_len)
+
                 stats = {"environment": info}  # send stats to the learner to log
                 client.request("send-stats", stats)
                 pbar.set_description(f"last return: {running_return}, last state: {obs['state'][0][0]:.2f}")
@@ -240,7 +380,8 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
                 already_intervened = False
                 client.update()
                 obs, _ = env.reset()
-                obs['state'] *= 0.0
+                print("state_rlpd55:",obs['state'],flush=True)
+                # obs['state'] *= 0.0
 
         if step > 0 and config.buffer_period > 0 and step % config.buffer_period == 0:
             # dump to pickle file
@@ -281,11 +422,33 @@ def learner(rng, agent, replay_buffer, demo_buffer, wandb_logger=None):
     )
     step = start_step
 
+    local_plotter = None
+    if FLAGS.save_local_plots:
+        if FLAGS.local_plot_dir:
+            local_plot_dir = FLAGS.local_plot_dir
+        elif FLAGS.checkpoint_path:
+            local_plot_dir = os.path.join(
+                os.path.abspath(FLAGS.checkpoint_path), "local_plots"
+            )
+        else:
+            local_plot_dir = os.path.abspath("./local_plots")
+        local_plotter = LocalMetricPlotter(
+            output_dir=local_plot_dir,
+            keys=list(FLAGS.local_plot_keys),
+            max_points=FLAGS.local_plot_max_points,
+        )
+        print(
+            f"[LocalPlotter] enabled. Exporting SVG+PNG to: {local_plot_dir}",
+            flush=True,
+        )
+
     def stats_callback(type: str, payload: dict) -> dict:
         """Callback for when server receives stats request."""
         assert type == "send-stats", f"Invalid request type: {type}"
         if wandb_logger is not None:
             wandb_logger.log(payload, step=step)
+        if local_plotter is not None:
+            local_plotter.update(payload, step=step)
         return {}  # not expecting a response
 
     # Create server
