@@ -29,7 +29,7 @@ def read_fisheye_camera(camera_index=0):
     print(f"设置fourcc: {cap.get(cv2.CAP_PROP_FOURCC)}")
     
     image_crop = None # lambda img: img[150:390, 500:820]
-    image_crop = lambda img: img[5:195, 650:835]
+    image_crop = lambda img: img[5:195, 600:835]
     
     while True:
         # 读取一帧
