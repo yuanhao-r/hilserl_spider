@@ -53,6 +53,10 @@ esc or spacemouse: done and return False in self-run mode
 
 ## Eval
 change run_actor.bash `--eval_checkpoint_step=CHECKPOINT_NUMBER_TO_EVAL` and `--eval_n_trajs=N_TIMES_TO_EVAL`
+for example:
+```bash
+./run_actor.sh --eval_checkpoint_step=34000 --eval_n_trajs=20
+```
 
 ```bash
 bash run_actor.bash
@@ -68,7 +72,7 @@ bash run_actor.bash
 
 2.  `gripper_control.py`: 检测夹爪能否正常开闭
 
-3.  `marvin_joint_control_with_feedback.py`: 控制机械臂到指定位姿，`MONITOR_ONLY = True`表示不控制，用于读取当前机械臂状态信息（关节角，末端位姿等），`MONITOR_ONLY = False`表示设置位姿并运动到目标位姿，真实运动。
+3.  `marvin_joint_control_with_feedback.py`: 控制机械臂到指定位姿，`MONITOR_ONLY = True`表示不控制(机械臂不动)，用于读取当前机械臂状态信息（关节角，末端位姿等），`MONITOR_ONLY = False`表示设置位姿并运动到目标位姿，真实运动。
 可通过修改`TARGET_JOINTS`方便地通过关节角度控制机械臂。
 注意改IP和左臂右臂。
 
@@ -81,6 +85,8 @@ python marvin_gripper_control.py --cmd 1
 python marvin_gripper_control.py --cmd 0 --skip-activate
 python marvin_gripper_control.py --cmd 1 --skip-activate
 ```
+注意改IP和左臂右臂。
+
 
 5.  `marvin_cartesian_move.py`: 可通过修改`TARGET_XYZABC`方便地通过末端位姿控制机械臂，可通过直接对xyz三轴值的加减处理方便地调节末端位姿
 

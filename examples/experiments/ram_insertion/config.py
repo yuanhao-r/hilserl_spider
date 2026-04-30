@@ -74,16 +74,16 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
         RESET_POSE_MM = np.zeros((6,), dtype=np.float64)
 
         # 1. 抓取点 / 插入完成点 (使用你测试过的坐标)
-        TARGET_JOINTS = np.array([ 79.62,   36.48,  -91.89, -113.62,  -39.47,   16.09,    2.50], dtype=np.float64)
+        TARGET_JOINTS = np.array([  76.64,   37.50,  -89.46, -116.43,  -40.84,   15.71,    4.11], dtype=np.float64)
         # GRASP_JOINTS = np.array([-8.655314,-70.119028,-80.595401,-48.706882,49.187142,-19.077660,26.062595], dtype=np.float64)
         
         # 2. 抓取点正上方 (请务必用示教器把机械臂提起到内存槽正上方，并把那时的关节角填到这里！)
         # (这里暂时填的复位点做示范，请一定修改为你实际的正上方安全点)
-        TOP_JOINTS = np.array([ 80.53,   24.99,  -92.68, -117.59,  -28.43,   22.15,    0.49], dtype=np.float64)
+        TOP_JOINTS = np.array([   76.82,   19.98,  -92.06, -120.39,  -24.05,   24.50,   -3.11], dtype=np.float64)
         
         # 3. 初始复位待命点
         # RESET_JOINTS = np.array([ -6.09,   23.71,  -16.85, -103.77,   -5.87,   -8.51,  -24.22], dtype=np.float64)
-        RESET_JOINTS = np.array([ 80.53,   24.99,  -92.68, -117.59,  -28.43,   22.15,    0.49], dtype=np.float64)
+        RESET_JOINTS = np.array([  76.82,   19.98,  -92.06, -120.39,  -24.05,   24.50,   -3.11], dtype=np.float64)
 
         CONTROL_HZ = 10
         CONTROL_TIME = 1 / CONTROL_HZ
@@ -106,6 +106,7 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
             [0.8005, -0.08217, 0.6230, np.pi, np.pi, np.pi], dtype=np.float64
         )
         REWARD_THRESHOLD = 0.001
+        # 开关随机范围
         RANDOM_RESET = True
         # 兼容旧参数：若未配置 RANDOM_X_RANGE/Y_RANGE，则沿用 RANDOM_XY_RANGE
         RANDOM_XY_RANGE = 0.03
