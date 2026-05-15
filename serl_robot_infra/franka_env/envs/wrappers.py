@@ -37,12 +37,14 @@ class HumanClassifierWrapper(gym.Wrapper):
                 self.success_key = True
         except AttributeError:
             pass
-    
+
     def step(self, action):
         obs, rew, done, truncated, info = self.env.step(action)
-        if self.success_key:
+        success = False
+        if self.success_key or obs['state'][0][1] >= 0.04:
             rew += 1
             done = True
+            success = True
             self.success_key = False
         else:
             rew = rew
@@ -54,7 +56,7 @@ class HumanClassifierWrapper(gym.Wrapper):
         #             break
         #         except:
         #             continue
-        info['succeed'] = (rew >= 1)
+        info['succeed'] = success # (rew >= 0.01)
         return obs, rew, done, truncated, info
     
     def reset(self, **kwargs):

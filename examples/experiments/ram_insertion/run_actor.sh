@@ -4,7 +4,9 @@ export XLA_PYTHON_CLIENT_PREALLOCATE=false && \
 export XLA_PYTHON_CLIENT_MEM_FRACTION=.1 && \
 python ../../train_rlpd.py "$@" \
     --exp_name=ram_insertion \
-    --checkpoint_path=first_run \
     --actor \
-    --replay_intervention_path=./demo_data/ram_insertion_20_demos_2026-04-24_11-42-47.pkl \
+    --checkpoint_path=first_run_260511 \
+    
+    
+    # --replay_intervention_path=./demo_data/ram_insertion_20_demos_2026-04-24_11-42-47.pkl \
   

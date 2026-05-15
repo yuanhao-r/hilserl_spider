@@ -153,7 +153,7 @@ class DefaultTianjiEnvConfig:
     ABS_POSE_LIMIT_LOW = np.array([-0.20, -0.55, 0.40, -np.pi, -np.pi, -np.pi])
     # 若配置的安全框与真实关键位姿(当前/RESET/TARGET/GRASP)不一致，自动扩框避免“被边界吸住”
     AUTO_EXPAND_ABS_POSE_LIMIT: bool = True
-    ABS_POSE_LIMIT_EXPAND_MARGIN_XYZ = np.array([0.02, 0.02, 0.02], dtype=np.float64)
+    ABS_POSE_LIMIT_EXPAND_MARGIN_XYZ = np.array([0.05, 0.05, 0.05], dtype=np.float64)
 
     COMPLIANCE_PARAM: Dict[str, float] = {}
     RESET_PARAM: Dict[str, float] = {}
@@ -539,6 +539,12 @@ class TianjiEnv(gym.Env):
         joints_rad = np.array(joints_deg, dtype=np.float64) * self.controller.DEG_TO_RAD
         fk_mat = self.controller.compute_fk(joints_rad)
         pose_mat = self.base_right_tf @ fk_mat @ self.tool_tf
+        return _transform_to_pose6(pose_mat)
+
+    def _apply_rpy_to_pose6(self, pose, rpy):
+        """利用正运动学(FK)，把关节角度转化为6D笛卡尔位姿用于计算Reward"""
+        pose_mat = _pose6_to_transform(pose)
+        pose_mat[:3, :3] = pose_mat[:3, :3] @ Rotation.from_euler("xyz", rpy).as_matrix()
         return _transform_to_pose6(pose_mat)
 
     def _set_default_task_poses_from_current(self):
@@ -1092,7 +1098,7 @@ class TianjiEnv(gym.Env):
 
         self._update_currpos()
         ob = self._get_obs()
-        reward, finish = 0, False
+        reward, finish = -0.02, False
         done = (
             self.curr_path_length >= self.max_episode_length
             or finish
@@ -1102,6 +1108,7 @@ class TianjiEnv(gym.Env):
         return ob, reward, done, False, {"succeed": finish}
 
     def compute_reward(self, obs):
+        print("\n\n\ncompute reward")
         current_pose = obs["state"]["tcp_pose"]
         current_rot = Rotation.from_euler("xyz", current_pose[3:]).as_matrix()
         target_rot = Rotation.from_euler("xyz", self._TARGET_POSE[3:]).as_matrix()
@@ -1522,6 +1529,21 @@ class TianjiEnv(gym.Env):
                 reason="go_to_reset random_pose",
             )
 
+
+    def go_to_rest(self):
+        self._gripper_control(False)
+
+        self._pause_with_hold(1.0, reason="quick_regrasp open gripper")
+
+        print("[自动复位] 向上拔出到安全点...")
+        if hasattr(self.config, "TOP_JOINTS"):
+            self.interpolate_joint_move(
+                self.config.TOP_JOINTS,
+                timeout=1.5,
+                settle=False,
+                settle_timeout=0.0,
+            )
+
     def quick_regrasp(self):
         """全自动流水线抓取：纯关节空间移动"""
         intermediate_settle = (
@@ -1759,6 +1781,57 @@ class TianjiEnv(gym.Env):
                 return
         elif mode == "continuous":
             raise NotImplementedError("Continuous gripper control is optional")
+
+    # right arm pose only
+    def _solve_ik(self, pose):
+        if self.fake_env:
+            return None
+
+        arr = np.array(pose, dtype=np.float64)
+        target_tf = _pose6_to_transform(arr)
+        self.right_target_pose = target_tf
+
+        try:
+            current_ql = self.controller.get_joint_pos_rad(arm_id=1)
+            current_qr = self.controller.get_joint_pos_rad(arm_id=2)
+
+            left_hand_target = transform_to_wxyzxyz(self.left_target_pose)
+            right_hand_target = transform_to_wxyzxyz(self.right_target_pose)
+            head_target = transform_to_wxyzxyz(self.head_target_pose)
+
+            left_pose_xyzwxyz = np.concatenate(
+                [left_hand_target[4:7], left_hand_target[0:4]]
+            )
+            right_pose_xyzwxyz = np.concatenate(
+                [right_hand_target[4:7], right_hand_target[0:4]]
+            )
+            head_pose_xyzwxyz = np.concatenate([head_target[4:7], head_target[0:4]])
+            head_pose_xyzwxyz[2] += self.head_z_offset
+
+            current_cfg = list(self.body_waist_q) + list(current_qr) + list(current_ql)
+            ik_seed_cfg = current_cfg[2:]
+            solver_cfg, _ = self.full_ik_solver.compute_ik(
+                ik_seed_cfg,
+                head_pose_xyzwxyz,
+                right_pose_xyzwxyz,
+                left_pose_xyzwxyz,
+                force_seed_from_current=False,
+            )
+
+            if solver_cfg is None:
+                return None
+            self._ik_need_seed_refresh = True
+
+            solver_cfg = np.concatenate([current_cfg[:2], solver_cfg])
+            qr_target = solver_cfg[2:9]
+            ql_target = solver_cfg[9:]
+
+            joint_cmd_left = np.array(ql_target / self.controller.DEG_TO_RAD, dtype=np.float64)
+            joint_cmd_right = np.array(qr_target / self.controller.DEG_TO_RAD, dtype=np.float64)
+
+            return joint_cmd_right
+        except Exception as e:
+            return None
 
     def _solve_and_send_ik(self):
         if self.fake_env:

@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -43,14 +44,14 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
             ).resolve()
         )
         REALSENSE_CAMERAS = {
-            "wrist_1": {
-                "camera_type": "orbbec",
-                # 多台 Orbbec 时建议固定 serial_number，避免枚举顺序变化。
-                "serial_number": "CPCV5530014V",
-                # 也可用 device_index（0/1/2...），但不如 serial 稳定。
-                # "device_index": 0,
-                "dim": (1280, 720),
-            },
+            # "wrist_1": {
+            #     "camera_type": "orbbec",
+            #     # 多台 Orbbec 时建议固定 serial_number，避免枚举顺序变化。
+            #     "serial_number": "CPCV5530014V",
+            #     # 也可用 device_index（0/1/2...），但不如 serial 稳定。
+            #     # "device_index": 0,
+            #     "dim": (1280, 720),
+            # },
             # "wrist_1": {
             #     "camera_index": 0,
             #     "dim": (1280, 720),
@@ -61,9 +62,9 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
             },
         }
         IMAGE_CROP = {
-            "wrist_1": lambda img: img[5:195, 600:835],
+            # "wrist_1": lambda img: img[5:195, 600:835],
             # "wrist_2": lambda img: img[40:360, 520:840],
-            "wrist_2": lambda img: img[191:656, 295:787],
+            "wrist_2": lambda img: img[278:684, 600:1066]#,[191:656, 295:787],
         }
         WOWSKIN_PORT = None
         # Tianji task poses use [x, y, z, rx, ry, rz], where xyz are in mm here
@@ -74,16 +75,33 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
         RESET_POSE_MM = np.zeros((6,), dtype=np.float64)
 
         # 1. 抓取点 / 插入完成点 (使用你测试过的坐标)
-        TARGET_JOINTS = np.array([  76.64,   37.50,  -89.46, -116.43,  -40.84,   15.71,    4.11], dtype=np.float64)
-        # GRASP_JOINTS = np.array([-8.655314,-70.119028,-80.595401,-48.706882,49.187142,-19.077660,26.062595], dtype=np.float64)
+        # TARGET_JOINTS = np.array([ 75.05,   49.79,  -88.83, -115.96,  130.50,  -17.64,   -0.84], dtype=np.float64)
+        # TARGET_JOINTS = np.array([ 78.61602,  26.68312,  -100.83729,  -117.58612,  149.66961,  -29.96585,  7.68013], dtype=np.float64)
+        # 260509
+        # TARGET_JOINTS = np.array([94.03467,  45.92141,  -108.42716,  -113.40481,  129.57779,  -29.59668,  -11.24881], dtype=np.float64)
+        #TARGET_JOINTS = np.array([85.42277,  56.03439,  -81.79520,  -104.54444,  124.36304,  0.72558,  -11.55420], dtype=np.float64)
+        # 260511
+        TARGET_JOINTS = np.array([85.74012,  83.62775,  -78.57943,  -114.32326,  102.61940,  11.99046,  -21.32428], dtype=np.float64)
         
+        # GRASP_JOINTS = np.array([-8.655314,-70.119028,-80.595401,-48.706882,49.187142,-19.077660,26.062595], dtype=np.float64)
+
         # 2. 抓取点正上方 (请务必用示教器把机械臂提起到内存槽正上方，并把那时的关节角填到这里！)
         # (这里暂时填的复位点做示范，请一定修改为你实际的正上方安全点)
-        TOP_JOINTS = np.array([   76.82,   19.98,  -92.06, -120.39,  -24.05,   24.50,   -3.11], dtype=np.float64)
-        
+        # TOP_JOINTS = np.array([ 75.87,   36.76,  -89.20, -121.87,  141.95,  -26.66,   -1.08], dtype=np.float64)
+        # 260509:
+        # TOP_JOINTS = np.array([98.72443,  40.75554,  -108.88324,  -118.11645,  133.35419,  -33.57391,  -16.68520], dtype=np.float64)
+        #TOP_JOINTS = np.array([87.08540,  52.91363,  -80.32155,  -109.01091,  127.76875,  -1.75918,  -17.52225], dtype=np.float64)
+        # 260511
+        TOP_JOINTS = np.array([86.02954,  76.22053,  -80.41872,  -119.65581,  109.78898,  6.75465,  -25.18097], dtype=np.float64)
+
         # 3. 初始复位待命点
         # RESET_JOINTS = np.array([ -6.09,   23.71,  -16.85, -103.77,   -5.87,   -8.51,  -24.22], dtype=np.float64)
-        RESET_JOINTS = np.array([  76.82,   19.98,  -92.06, -120.39,  -24.05,   24.50,   -3.11], dtype=np.float64)
+        # RESET_JOINTS = np.array([ 75.87,   36.76,  -89.20, -121.87,  141.95,  -26.66,   -1.08], dtype=np.float64)
+        # 260509:
+        # RESET_JOINTS = np.array([98.72443,  40.75554,  -108.88324,  -118.11645,  133.35419,  -33.57391,  -16.68520], dtype=np.float64)
+        # RESET_JOINTS = np.array([87.08540,  52.91363,  -80.32155,  -109.01091,  127.76875,  -1.75918,  -17.52225], dtype=np.float64)
+        # 260511
+        RESET_JOINTS = np.array([86.02954,  76.22053,  -80.41872,  -119.65581,  109.78898,  6.75465,  -25.18097], dtype=np.float64)
 
         CONTROL_HZ = 10
         CONTROL_TIME = 1 / CONTROL_HZ
@@ -103,7 +121,7 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
             [0.7505, -0.1617, 0.5230, -np.pi, -np.pi, -np.pi], dtype=np.float64
         )
         ABS_POSE_LIMIT_HIGH = np.array(
-            [0.8005, -0.08217, 0.6230, np.pi, np.pi, np.pi], dtype=np.float64
+            [1.8005, -0.08217, 1.6230, np.pi, np.pi, np.pi], dtype=np.float64
         )
         REWARD_THRESHOLD = 0.001
         # 开关随机范围
@@ -116,12 +134,23 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
         RANDOM_Z_RANGE = 0.0
         # 可选：定向限制（单位 m）
         # 例如若“向前”为 +x，可把 RANDOM_DX_MAX 设小一些，减少前探碰撞
-        RANDOM_DX_MIN = -0.015
-        RANDOM_DX_MAX = 0.015
-        RANDOM_DY_MIN = -0.015
-        RANDOM_DY_MAX = 0.015
+        RANDOM_DX_MIN = -0.025
+        RANDOM_DX_MAX = 0.025
+        RANDOM_DY_MIN = -0.025
+        RANDOM_DY_MAX = 0.025
         RANDOM_DZ_MIN = 0.0
         RANDOM_DZ_MAX = 0.0
+
+        # RANDOM for GRASP pose
+        RANDOM_TARGET_DX_RANGE = 0.001
+        RANDOM_TARGET_DY_RANGE = 0.0
+        RANDOM_TARGET_DZ_RANGE = 0.0005
+
+        # Orientation 
+        RANDOM_TARGET_RX_RANGE = 0.05
+        RANDOM_TARGET_RY_RANGE = 0.05
+        RANDOM_TARGET_RZ_RANGE = 0.1
+
         # 可选：整体偏置（单位 m）
         RANDOM_X_BIAS = 0.0
         RANDOM_Y_BIAS = 0.0
@@ -308,6 +337,7 @@ else:
 class TrainConfig(DefaultTrainingConfig):
     # 相机键与 REALSENSE_CAMERAS 自动同步；只改 REALSENSE_CAMERAS 即可切单/双相机
     image_keys = list(EnvConfig.REALSENSE_CAMERAS.keys())
+    # image_keys = ["wrist_2"]
     classifier_keys = list(EnvConfig.REALSENSE_CAMERAS.keys())
     proprio_keys = ["tcp_pose",] # ["tcp_pose", "tcp_vel", "tcp_force", "tcp_torque", "gripper_pose"]
     buffer_period = 1000

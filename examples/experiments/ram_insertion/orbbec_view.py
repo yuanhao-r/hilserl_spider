@@ -783,9 +783,9 @@ def _save_detect_debug_image(
     draw_and_save_annotated_image(img, all_items, output_path, chosen_pixel=chosen_pixel)
 
 
-def run_camera_gemini_3d():
+def run_camera_gemini_3d(serial_number=None):
     """主流程：相机 D2C 对齐 -> 按空格截帧 -> Gemini 2D -> 取深度 -> 输出 3D。"""
-    pipeline = Pipeline()
+    pipeline = Pipeline(OrbbecCapture._select_device(serial_number))
     config = Config()
     try:
         profile_list = pipeline.get_stream_profile_list(OBSensorType.COLOR_SENSOR)
@@ -957,4 +957,4 @@ def run_camera_gemini_3d():
 
 
 if __name__ == "__main__":
-    run_camera_gemini_3d()
+    run_camera_gemini_3d(serial_number="CPCV5530014V")

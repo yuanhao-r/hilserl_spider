@@ -204,7 +204,10 @@ class LocalMetricPlotter:
 
 
 ##############################################################################
-
+def leave_y(state):
+    state[:,:1] = 0
+    state[:,2:] = 0
+    return state
 
 def actor(agent, data_store, intvn_data_store, env, sampling_rng):
     """
@@ -224,6 +227,8 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
         for episode in range(FLAGS.eval_n_trajs):
             obs, _ = env.reset()
             # obs['state'] *= 0.0
+            obs['state'] = leave_y(obs['state'])
+
             done = False
             start_time = time.time()
             while not done:
@@ -238,6 +243,8 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
                 next_obs, reward, done, truncated, info = env.step(actions)
                 print("state_rlpd22:",obs['state'],flush=True)
                 # next_obs['state'] *= 0.0
+                next_obs['state'] = leave_y(next_obs['state'])
+
                 obs = next_obs
 
                 if done:
@@ -246,12 +253,16 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
                         time_list.append(dt)
                         print(dt)
 
-                    success_counter += reward # TODO if other reward
+                    if info['succeed']:
+                        success_counter += 1 # reward # TODO if other reward
                     print(reward)
                     print(f"{success_counter}/{episode + 1}")
 
         print(f"success rate: {success_counter / FLAGS.eval_n_trajs}")
         print(f"average time: {np.mean(time_list)}")
+
+        env.go_to_rest()
+        # env.go_to_reset()
         return  # after done eval, return and exit
     
     start_step = (
@@ -289,6 +300,7 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
 
     obs, _ = env.reset()
     # obs['state'] *= 0.0
+    obs['state'] = leave_y(obs['state'])
     print("state_rlpd33:",obs['state'],flush=True)
     done = False
 
@@ -320,6 +332,7 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
 
             next_obs, reward, done, truncated, info = env.step(actions)
             # next_obs['state'] *= 0.0
+            next_obs['state'] = leave_y(next_obs['state'])
             print_green(f"state_rlpd111{obs['state']}.")
 
             print("state_rlpd444:",obs['state'],flush=True)
@@ -382,6 +395,7 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
                 obs, _ = env.reset()
                 print("state_rlpd55:",obs['state'],flush=True)
                 # obs['state'] *= 0.0
+                obs['state'] = leave_y(obs['state'])
 
         if step > 0 and config.buffer_period > 0 and step % config.buffer_period == 0:
             # dump to pickle file
@@ -423,24 +437,24 @@ def learner(rng, agent, replay_buffer, demo_buffer, wandb_logger=None):
     step = start_step
 
     local_plotter = None
-    if FLAGS.save_local_plots:
-        if FLAGS.local_plot_dir:
-            local_plot_dir = FLAGS.local_plot_dir
-        elif FLAGS.checkpoint_path:
-            local_plot_dir = os.path.join(
-                os.path.abspath(FLAGS.checkpoint_path), "local_plots"
-            )
-        else:
-            local_plot_dir = os.path.abspath("./local_plots")
-        local_plotter = LocalMetricPlotter(
-            output_dir=local_plot_dir,
-            keys=list(FLAGS.local_plot_keys),
-            max_points=FLAGS.local_plot_max_points,
-        )
-        print(
-            f"[LocalPlotter] enabled. Exporting SVG+PNG to: {local_plot_dir}",
-            flush=True,
-        )
+    # if FLAGS.save_local_plots:
+    #     if FLAGS.local_plot_dir:
+    #         local_plot_dir = FLAGS.local_plot_dir
+    #     elif FLAGS.checkpoint_path:
+    #         local_plot_dir = os.path.join(
+    #             os.path.abspath(FLAGS.checkpoint_path), "local_plots"
+    #         )
+    #     else:
+    #         local_plot_dir = os.path.abspath("./local_plots")
+    #     local_plotter = LocalMetricPlotter(
+    #         output_dir=local_plot_dir,
+    #         keys=list(FLAGS.local_plot_keys),
+    #         max_points=FLAGS.local_plot_max_points,
+    #     )
+    #     print(
+    #         f"[LocalPlotter] enabled. Exporting SVG+PNG to: {local_plot_dir}",
+    #         flush=True,
+    #     )
 
     def stats_callback(type: str, payload: dict) -> dict:
         """Callback for when server receives stats request."""

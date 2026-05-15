@@ -30,7 +30,7 @@ ip 10.10.13.10， 连接机器人后
 ```bash
 cd experiments/ram_insertion
 export HILSERL_ARM_BACKEND=tianji
-python ../../record_demos.py --exp_name ram_insertion --successes_needed 20
+python ../../record_demos.py --exp_name ram_insertion --successes_needed 200
 ```
 
 # Training
@@ -40,8 +40,8 @@ change run_learner.bash -demo_path for demo file
 
 ```bash
 cd experiments/ram_insertion
-bash run_actor.bash(press F8 to change to replay mode)
-bash run_learner.bash
+bash run_actor.sh(press F8 to change to replay mode)
+bash run_learner.sh
 ```
 
 in run_actor.bash shell:

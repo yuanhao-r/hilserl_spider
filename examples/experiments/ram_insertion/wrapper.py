@@ -459,16 +459,36 @@ class RAMEnv(BaseRAMRobotEnv):
                 linear_drop_timeout = float(
                     getattr(self.config, "LINEAR_DROP_TIMEOUT", 1.5)
                 )
+                rx_range = float(getattr(self.config, "RANDOM_TARGET_RX_RANGE", 0.0))
+                ry_range = float(getattr(self.config, "RANDOM_TARGET_RY_RANGE", 0.0))
+                rz_range = float(getattr(self.config, "RANDOM_TARGET_RZ_RANGE", 0.0))
+
+                target_dx_range = float(getattr(self.config, "RANDOM_TARGET_DX_RANGE", 0.0))
+                target_dy_range = float(getattr(self.config, "RANDOM_TARGET_DY_RANGE", 0.0))
+                target_dz_range = float(getattr(self.config, "RANDOM_TARGET_DZ_RANGE", 0.0))
+
                 if linear_drop and hasattr(self, "_joints_deg_to_pose6"):
                     target_pose = self._joints_deg_to_pose6(
                         np.array(self.config.TARGET_JOINTS, dtype=np.float64)
                     )
+                    xyz = (np.random.random(3) - 0.5) * 2.0 * [target_dx_range, target_dy_range, target_dz_range]
+                    rpy = (np.random.random(3) - 0.5) * 2.0 * [rx_range, ry_range, rz_range]
+                    target_pose = self._apply_rpy_to_pose6(target_pose, rpy)
+                    target_pose[:3] = target_pose[:3] + xyz
+                    print("[自动复位] 下降到抓取点, pose: ", target_pose)
+
                     self.interpolate_move(
                         np.array(target_pose, dtype=np.float64),
                         timeout=max(0.2, linear_drop_timeout * motion_timeout_scale),
                         is_reset=True,
                         ease=False,
                     )
+
+                    top_pose = np.copy(target_pose)
+                    top_pose[2] += 0.1
+                    top_joints = self._solve_ik(top_pose)
+                    if top_joints is not None:
+                        self.config.TOP_JOINTS = top_joints
                 else:
                     self.interpolate_joint_move(
                         np.array(self.config.TARGET_JOINTS, dtype=np.float64),
