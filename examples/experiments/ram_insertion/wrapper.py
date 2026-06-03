@@ -209,6 +209,7 @@ class RAMEnv(BaseRAMRobotEnv):
 
                 random_pose = self.clip_safety_box(random_pose)
                 delta_mm = (random_pose[:3] - base_pose[:3]) * 1000.0
+
                 print(
                     "[自动复位] 随机化初始化位姿 "
                     f"Δx={delta_mm[0]:.1f}mm Δy={delta_mm[1]:.1f}mm Δz={delta_mm[2]:.1f}mm "

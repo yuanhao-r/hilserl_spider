@@ -241,7 +241,7 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
                 actions = np.asarray(jax.device_get(actions))
 
                 next_obs, reward, done, truncated, info = env.step(actions)
-                print("state_rlpd22:",obs['state'],flush=True)
+                # print("state_rlpd22:",obs['state'],flush=True)
                 # next_obs['state'] *= 0.0
                 next_obs['state'] = leave_y(next_obs['state'])
 
@@ -301,7 +301,7 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
     obs, _ = env.reset()
     # obs['state'] *= 0.0
     obs['state'] = leave_y(obs['state'])
-    print("state_rlpd33:",obs['state'],flush=True)
+    # print("state_rlpd33:",obs['state'],flush=True)
     done = False
 
     # training loop
@@ -333,9 +333,9 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
             next_obs, reward, done, truncated, info = env.step(actions)
             # next_obs['state'] *= 0.0
             next_obs['state'] = leave_y(next_obs['state'])
-            print_green(f"state_rlpd111{obs['state']}.")
+            # print_green(f"state_rlpd111{obs['state']}.")
 
-            print("state_rlpd444:",obs['state'],flush=True)
+            # print("state_rlpd444:",obs['state'],flush=True)
             if "left" in info:
                 info.pop("left")
             if "right" in info:
@@ -393,7 +393,7 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
                 already_intervened = False
                 client.update()
                 obs, _ = env.reset()
-                print("state_rlpd55:",obs['state'],flush=True)
+                # print("state_rlpd55:",obs['state'],flush=True)
                 # obs['state'] *= 0.0
                 obs['state'] = leave_y(obs['state'])
 

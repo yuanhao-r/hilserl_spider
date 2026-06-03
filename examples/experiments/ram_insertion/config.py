@@ -1,5 +1,7 @@
 import os
 from pathlib import Path
+import math
+import gym
 
 import jax
 import jax.numpy as jnp
@@ -24,9 +26,14 @@ from experiments.ram_insertion.wrapper import RAMEnv
 
 ROBOT_BACKEND = os.environ.get("HILSERL_ARM_BACKEND", "tianji").lower()
 
+MAX_TILT_DEGREE = 5.0
 
 if ROBOT_BACKEND in {"tianji", "marvin"}:
     from franka_env.envs.tianji_env import DefaultTianjiEnvConfig
+
+    from utils.aruco_pose_utils import ArucoPoseUtils, aruco_pose_to_target_pose
+    # aruco_pose_mat = aruco_pose_to_target_pose(ArucoPoseUtils().get_arm_pose("front", 0).arm_transform)
+    # print(aruco_pose_mat)
 
     _WORKSPACE_ROOT = Path(__file__).resolve().parents[4]
     _TELEOP_ROOT = _WORKSPACE_ROOT / "test_teleop"
@@ -56,16 +63,37 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
             #     "camera_index": 0,
             #     "dim": (1280, 720),
             # },
-            "wrist_2": {
-                "camera_index": 0,
-                "dim": (1280, 720),
+            # "wrist_2": {
+            #     "camera_index": 0,
+            #     "dim": (1280, 720),
+            # },
+            "static_1": {
+                "camera_index": 3,
+                "dim": (640, 480),
             },
         }
         IMAGE_CROP = {
             # "wrist_1": lambda img: img[5:195, 600:835],
             # "wrist_2": lambda img: img[40:360, 520:840],
-            "wrist_2": lambda img: img[278:684, 600:1066]#,[191:656, 295:787],
+            # "wrist_2": lambda img: img[278:684, 600:1066]#,[191:656, 295:787],
+            "static_1": lambda img: img[:, 160:]#,[191:656, 295:787],
         }
+        # ARUCO_POSE_MATRIX = aruco_pose_mat
+        ARUCO_POSE_SERVICE_NAME = os.environ.get(
+            "HILSERL_ARUCO_POSE_SERVICE_NAME",
+            "/get_aruco_code_pose_result",
+        )
+        ARUCO_CAMERA_ID = os.environ.get("HILSERL_ARUCO_CAMERA_ID", "front")
+        ARUCO_CODE_ID = int(os.environ.get("HILSERL_ARUCO_CODE_ID", "0"))
+        ARUCO_SERVICE_TIMEOUT = float(os.environ.get("HILSERL_ARUCO_SERVICE_TIMEOUT", "1.0"))
+        ARUCO_SOURCE_FRAME = os.environ.get(
+            "HILSERL_ARUCO_SOURCE_FRAME",
+            "orbbec_camera_front_color_frame",
+        )
+        ARUCO_TARGET_FRAME = os.environ.get("HILSERL_ARUCO_TARGET_FRAME", "right_arm_link")
+        ARUCO_USE_TF = os.environ.get("HILSERL_ARUCO_USE_TF", "1") != "0"
+        # Manual fallback T_right_arm_link_camera. Used only when ARUCO_USE_TF is False.
+        ARUCO_CAMERA_TO_ARM = np.eye(4, dtype=np.float64)
         WOWSKIN_PORT = None
         # Tianji task poses use [x, y, z, rx, ry, rz], where xyz are in mm here
         # and converted to meters below (same style as xarm).
@@ -142,9 +170,9 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
         RANDOM_DZ_MAX = 0.0
 
         # RANDOM for GRASP pose
-        RANDOM_TARGET_DX_RANGE = 0.001
+        RANDOM_TARGET_DX_RANGE = 0.005
         RANDOM_TARGET_DY_RANGE = 0.0
-        RANDOM_TARGET_DZ_RANGE = 0.0005
+        RANDOM_TARGET_DZ_RANGE = 0.005
 
         # Orientation 
         RANDOM_TARGET_RX_RANGE = 0.05
@@ -244,6 +272,8 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
         BASIC_JOINT_RESET = np.array(
             [45.0, -60.0, -8.0, -57.0, 5.0, -5.0, 5.0], dtype=np.float64
         )
+        # maximum allowed tilt (degrees) from the XY-plane for the end-effector axis
+        MAX_TILT_DEG = MAX_TILT_DEGREE
 else:
     from franka_env.envs.xarm_env import DefaultXArmEnvConfig
 
@@ -292,6 +322,7 @@ else:
         BASIC_JOINT_RESET = np.array(
             [-46.12577010671351, -44.29478763552985, -82.5851081603773, -180.04526184239683, 37.780894280696636, 191.0232473104399]
         )
+        MAX_TILT_DEG = MAX_TILT_DEGREE
         COMPLIANCE_PARAM = {
             "translational_stiffness": 2000,
             "translational_damping": 89,
@@ -334,6 +365,77 @@ else:
         }
 
 
+class FailureOnTiltWrapper(gym.Wrapper):
+    """Terminate episode with failure if end-effector axis tilts > max_tilt_deg from XY plane.
+
+    Assumes tcp_pose is in observation and contains [x,y,z, roll, pitch, yaw] in radians
+    (Quat2EulerWrapper is applied earlier in the pipeline).
+    """
+    def __init__(self, env, max_tilt_deg=MAX_TILT_DEGREE, pose_key="tcp_pose"):
+        super().__init__(env)
+        self.max_tilt_rad = math.radians(max_tilt_deg)
+        # self.max_tilt_rad = math.radians(30)
+        self.pose_key = pose_key
+
+    def _ee_axis_from_rpy(self, roll, pitch, yaw):
+        # R = Rz(yaw) @ Ry(pitch) @ Rx(roll)
+        cr = math.cos(roll); sr = math.sin(roll)
+        cp = math.cos(pitch); sp = math.sin(pitch)
+        cy = math.cos(yaw); sy = math.sin(yaw)
+        # third column of R (end-effector local z axis in world frame)
+        vx = cy * sp * cr + sy * sr
+        vy = sy * sp * cr - cy * sr
+        vz = cp * cr
+        return vx, vy, vz
+
+    def _tilt_from_xy(self, vx, vy, vz):
+        horiz = math.hypot(vx, vy)
+        # angle between axis and XY plane
+        return abs(math.atan2(abs(vz), horiz))
+
+    def step(self, action):
+        obs, reward, done, truncated, info = self.env.step(action)
+        try:
+            pose = obs['state'].get(self.pose_key) if isinstance(obs, dict) else None
+
+            if pose is not None and len(pose) >= 6:
+                roll, pitch, yaw = float(pose[3]), float(pose[4]), float(pose[5])
+                vx, vy, vz = self._ee_axis_from_rpy(roll, pitch, yaw)
+                tilt = self._tilt_from_xy(vx, vy, vz)
+                # print("x: %.3f, y: %.3f, z: %.3f" % (pose[0], pose[1], pose[2]))
+                # print("\ntilt: %.3f" % tilt)
+
+                if tilt > self.max_tilt_rad:
+                    # mark failure: set done and annotate info
+                    done = True
+                    info = dict(info or {})
+                    info['succeed'] = False
+                    info["failure_reason"] = "tilt_exceeded"
+                    info["tilt_rad"] = tilt
+                    info["tilt_deg"] = math.degrees(tilt)
+                    # optionally set reward to 0 or a negative penalty
+                    reward = 0.0
+
+                    print("\033[91m[INFO] tilt too much, failure !!!\033[0m")
+                elif pose[2] <= 0.93:
+                    done = True
+                    info = dict(info or {})
+                    info['succeed'] = True
+                    info["failure_reason"] = ""
+                    # optionally set reward to 0 or a negative penalty
+                    reward = 1.0
+
+                    print("\033[32m[INFO] z satisfy success condition!\033[0m")
+
+        except Exception:
+            # be conservative: do not crash the wrapper on unexpected obs format
+            pass
+        return obs, reward, done, truncated, info
+
+    def reset(self, **kwargs):
+        return self.env.reset(**kwargs)
+
+
 class TrainConfig(DefaultTrainingConfig):
     # 相机键与 REALSENSE_CAMERAS 自动同步；只改 REALSENSE_CAMERAS 即可切单/双相机
     image_keys = list(EnvConfig.REALSENSE_CAMERAS.keys())
@@ -348,7 +450,7 @@ class TrainConfig(DefaultTrainingConfig):
     resnet_param_fixed: bool = True
     setup_mode = "single-arm-fixed-gripper"
 
-    
+
     def get_environment(self, fake_env=False, save_video=False, classifier=False, replay_intervention_files=None):
         env_config = EnvConfig()
         self.image_keys = list(env_config.REALSENSE_CAMERAS.keys())
@@ -358,6 +460,10 @@ class TrainConfig(DefaultTrainingConfig):
             save_video=save_video,
             config=env_config,
         )
+
+        # print(env._joints_deg_to_pose6(env_config.TARGET_JOINTS))
+        # print(env._joints_deg_to_matrix(env_config.TARGET_JOINTS))
+        
         # env = SleepEnv(env, control_time=env_config.CONTROL_TIME)
         env = GripperCloseEnv(env)
         if not fake_env:
@@ -370,6 +476,8 @@ class TrainConfig(DefaultTrainingConfig):
                 expert_linear_scale=getattr(env_config, "SPACEMOUSE_LINEAR_SCALE", 1.0),
                 expert_angular_scale=getattr(env_config, "SPACEMOUSE_ANGULAR_SCALE", 1.0),
             )
+        # check tilt after proprio (tcp_pose should be present, in radians)
+        env = FailureOnTiltWrapper(env, max_tilt_deg=getattr(env_config, "MAX_TILT_DEG", MAX_TILT_DEGREE))
         env = SleepEnv(env, control_time=env_config.CONTROL_TIME)
         env = RelativeFrame(env)
         env = Quat2EulerWrapper(env)

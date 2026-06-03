@@ -40,8 +40,11 @@ class HumanClassifierWrapper(gym.Wrapper):
 
     def step(self, action):
         obs, rew, done, truncated, info = self.env.step(action)
-        success = False
-        if self.success_key or obs['state'][0][1] >= 0.04:
+        success = info['succeed'] if 'succeed' in info else False
+        finished_by_height = False # obs['state'][0][1] >= 0.04
+        if finished_by_height:
+            print("succeed with low height.")
+        if self.success_key or finished_by_height:
             rew += 1
             done = True
             success = True
@@ -420,6 +423,7 @@ class SpacemouseIntervention(gym.ActionWrapper):
             if self.left:
                 rew += 1
                 done = True
+                info["succeed"] = True
                 if self.debug_twitch:
                     base_env = self.env.unwrapped
                     if hasattr(base_env, "_debug_log"):
@@ -439,7 +443,7 @@ class SpacemouseIntervention(gym.ActionWrapper):
                         base_env.debug_dump_recent_joint_samples(
                             reason="spacemouse_right_done", window=3
                         )
-                
+
         if "intervene_action" not in info and replaced:
             info["intervene_action"] = new_action
             

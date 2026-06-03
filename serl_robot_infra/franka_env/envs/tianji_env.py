@@ -23,7 +23,7 @@ from franka_env.camera.video_capture import VideoCapture
 from franka_env.envs.wow_skin import WowSkin
 from scipy.linalg import expm
 
-
+IMAGE_SIZE = (256, 256)
 class ImageDisplayer(Process):
     def __init__(self, queue_obj, name):
         super().__init__()
@@ -38,7 +38,7 @@ class ImageDisplayer(Process):
                 break
             frame = np.concatenate(
                 [
-                    cv2.resize(v, (128, 128))
+                    cv2.resize(v, IMAGE_SIZE)
                     for k, v in img_array.items()
                     if "full" not in k
                 ],
@@ -496,7 +496,7 @@ class TianjiEnv(gym.Env):
                         key: gym.spaces.Box(
                             0,
                             255,
-                            shape=(128, 128, 3),
+                            shape=(*IMAGE_SIZE, 3),
                             dtype=np.uint8,
                         )
                         for key in config.REALSENSE_CAMERAS
@@ -533,6 +533,12 @@ class TianjiEnv(gym.Env):
 
         print("Initialized Tianji MARVIN Env.")
 
+    def _joints_deg_to_matrix(self, joints_deg):
+        """利用正运动学(FK)，把关节角度转化为6D笛卡尔位姿用于计算Reward"""
+        joints_rad = np.array(joints_deg, dtype=np.float64) * self.controller.DEG_TO_RAD
+        fk_mat = self.controller.compute_fk(joints_rad)
+        pose_mat = fk_mat @ self.tool_tf
+        return pose_mat
 
     def _joints_deg_to_pose6(self, joints_deg):
         """利用正运动学(FK)，把关节角度转化为6D笛卡尔位姿用于计算Reward"""
@@ -560,6 +566,8 @@ class TianjiEnv(gym.Env):
         else:
             self._RESET_POSE = self.currpos.copy()
             self.resetpos = self.currpos.copy()
+
+        print("\n\n\n!!!! reset_pose: ", self._RESET_POSE)
 
         if hasattr(self.config, "GRASP_JOINTS"):
             self._GRASP_POSE = self._joints_deg_to_pose6(self.config.GRASP_JOINTS)
@@ -1460,6 +1468,7 @@ class TianjiEnv(gym.Env):
     
     def go_to_reset(self, joint_reset=False, replay_start_pose=None):
         """安全的宏观复位：纯关节空间移动"""
+
         intermediate_settle = (
             self.reset_intermediate_settle if self.reset_continuous_mode else True
         )
@@ -1488,6 +1497,7 @@ class TianjiEnv(gym.Env):
                     np.array(self.config.RESET_JOINTS, dtype=np.float64)
                 )
                 reset_pose = self.clip_safety_box(np.array(reset_pose, dtype=np.float64))
+
                 self.interpolate_move(
                     reset_pose,
                     timeout=max(0.2, float(self.reset_top_to_reset_timeout)),
@@ -1501,6 +1511,8 @@ class TianjiEnv(gym.Env):
                     settle=final_settle,
                     settle_timeout=self.reset_final_settle_timeout if final_settle else 0.0,
                 )
+
+
         if not self.randomreset:
             self._pause_with_hold(
                 self.reset_after_reset_dwell_sec,
@@ -1523,6 +1535,7 @@ class TianjiEnv(gym.Env):
                 -self.random_rz_range, self.random_rz_range
             )
             random_pose[3:] = euler_random
+
             self.interpolate_move(random_pose, timeout=1.0, is_reset=True)
             self._pause_with_hold(
                 self.reset_after_random_dwell_sec,
