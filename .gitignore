@@ -7,6 +7,7 @@ openpi_test/openpi/model/
 examples/experiments/ram_insertion/demo_data/
 examples/experiments/ram_insertion/first_run*/
 examples/utils/Log/*
+examples/experiments/ram_insertion/cyclonedds.log
 lerobot/
 *.tar
 *.gz
