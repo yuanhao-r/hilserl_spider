@@ -3,7 +3,7 @@ import cv2
 
 
 class FisheyeCapture:
-    def __init__(self, name, dim=(640, 480), camera_index=2):
+    def __init__(self, name, dim=(640, 480), camera_index=2, exposure=None):
         self.name = name
         self.dim = dim
         self.camera_index = camera_index
@@ -16,6 +16,9 @@ class FisheyeCapture:
             fourcc = cv2.VideoWriter_fourcc(*'MJPG')
             self.cap.set(cv2.CAP_PROP_FOURCC, fourcc)
             self.cap.set(cv2.CAP_PROP_FPS, 30)
+
+            if exposure is not None:
+                self.cap.set(cv2.CAP_PROP_EXPOSURE, exposure)
             # print(f"fisheye resolution: {self.cap.get(cv2.CAP_PROP_FRAME_WIDTH)}x{self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT)}")
 
     def read(self):

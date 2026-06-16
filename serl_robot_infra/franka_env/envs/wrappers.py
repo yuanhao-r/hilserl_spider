@@ -155,6 +155,9 @@ class Quat2EulerWrapper(gym.ObservationWrapper):
         # )
         return observation
 
+    def reset(self, **kwargs):
+        return self.env.reset(**kwargs)
+
 
 class Quat2R2Wrapper(gym.ObservationWrapper):
     """
@@ -222,8 +225,8 @@ class SleepEnv(gym.ActionWrapper):
 
     def step(self, action):
         step_time = time.time() - self.cur_time
-        if step_time < self.control_time:
-            time.sleep( self.control_time - step_time )
+        # if step_time < self.control_time:
+            # time.sleep( self.control_time - step_time )
         
         obs, rew, done, truncated, info = self.env.step(action)
         self.cur_time = time.time()
@@ -397,6 +400,8 @@ class SpacemouseIntervention(gym.ActionWrapper):
 
         if self.require_button and not button_pressed:
             intervened = False
+
+        print('Space Mouse intervene: ', expert_a)
 
         if intervened:
             self._post_reset_hold_remaining = 0

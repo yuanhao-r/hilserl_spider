@@ -559,6 +559,8 @@ class RAMEnv(BaseRAMRobotEnv):
         time.sleep(1.5)
 
     def reset(self, joint_reset=False, replay_start_pose=None, **kwargs):
+        options = kwargs.get("options") or {}
+        skip_regrasp = bool(options.get("skip_regrasp", False))
         if hasattr(self, "_enter_reset_motion_mode"):
             # self._enter_reset_motion_mode(reason="RAMEnv.reset")
         # try:
@@ -577,10 +579,10 @@ class RAMEnv(BaseRAMRobotEnv):
             if self.should_regrasp:
                 self.regrasp()
                 self.should_regrasp = False
-            
+
             did_quick_regrasp = False
             continue_from_target_after_grasp = False
-            if self.auto_quick_regrasp:
+            if self.auto_quick_regrasp and not skip_regrasp:
                 chain_from_target = bool(
                     getattr(self.config, "CHAIN_FROM_TARGET_AFTER_GRASP", True)
                 ) and bool(getattr(self.config, "RESET_CHAINED_WAYPOINT_MOTION", True))
@@ -619,6 +621,9 @@ class RAMEnv(BaseRAMRobotEnv):
             obs = self._get_obs()
             self.terminate = False
             self.max_distance = None
+
+            self.reset_cycle()
+
             return obs, {}
         # finally:
         #     if hasattr(self, "_restore_control_mode_after_reset"):

@@ -50,7 +50,7 @@ flags.DEFINE_string("ip", "localhost", "IP address of the learner.")
 flags.DEFINE_multi_string("demo_path", None, "Path to the demo data.")
 flags.DEFINE_string("checkpoint_path", None, "Path to save checkpoints.")
 flags.DEFINE_integer("eval_checkpoint_step", 0, "Step to evaluate the checkpoint.")
-flags.DEFINE_integer("eval_n_trajs", 20, "Number of trajectories to evaluate.")
+flags.DEFINE_integer("eval_n_trajs", 100, "Number of trajectories to evaluate.")
 flags.DEFINE_boolean("save_video", False, "Save video.")
 
 flags.DEFINE_boolean("wandb", False, "Use wandb to log training process.")
@@ -224,8 +224,14 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
         )
         agent = agent.replace(state=ckpt)
 
-        for episode in range(FLAGS.eval_n_trajs):
-            obs, _ = env.reset()
+        time_consumed = 0.0
+        skip_regrasp = False
+        # for episode in range(FLAGS.eval_n_trajs):
+        episode = 0
+        while episode < FLAGS.eval_n_trajs:
+            obs, _ = env.reset(options = {
+                        "skip_regrasp": skip_regrasp
+                    })
             # obs['state'] *= 0.0
             obs['state'] = leave_y(obs['state'])
 
@@ -248,18 +254,25 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
                 obs = next_obs
 
                 if done:
+                    dt = time.time() - start_time
+                    time_consumed += dt
                     if reward:
-                        dt = time.time() - start_time
                         time_list.append(dt)
                         print(dt)
 
                     if info['succeed']:
                         success_counter += 1 # reward # TODO if other reward
+
+                    skip_regrasp = info.get("skip_regrasp", False)
+                    if skip_regrasp:
+                        episode -= 1
                     print(reward)
                     print(f"{success_counter}/{episode + 1}")
 
+            episode += 1
+    
         print(f"success rate: {success_counter / FLAGS.eval_n_trajs}")
-        print(f"average time: {np.mean(time_list)}")
+        print(f"average time: {time_consumed / FLAGS.eval_n_trajs}")
 
         env.go_to_rest()
         # env.go_to_reset()
@@ -303,6 +316,8 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
     obs['state'] = leave_y(obs['state'])
     # print("state_rlpd33:",obs['state'],flush=True)
     done = False
+
+    print(type(env))
 
     # training loop
     timer = Timer()
@@ -370,9 +385,10 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
 
             obs = next_obs
             if done or truncated:
-                suceess_q.append(reward) # TODO if other reward
-                if len(suceess_q) == suceess_q.maxlen:
-                    task_info['recent_success_rate'] = sum(suceess_q) / suceess_q.maxlen
+                succeed = float(info.get("succeed", False))
+                suceess_q.append(succeed) # TODO if other reward
+                if len(suceess_q) >= suceess_q.maxlen * 0.5:
+                    task_info['recent_success_rate'] = sum(suceess_q) / len(suceess_q)
                     task_stats = {"task": task_info}  # send stats to the learner to log
                     client.request("send-stats", task_stats)
                     print("recent_success_rate: ", task_info['recent_success_rate'], flush=True)
@@ -392,7 +408,11 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
                 intervention_steps = 0
                 already_intervened = False
                 client.update()
-                obs, _ = env.reset()
+                obs, _ = env.reset(
+                    options = {
+                        "skip_regrasp": info.get("skip_regrasp", False)
+                    })
+
                 # print("state_rlpd55:",obs['state'],flush=True)
                 # obs['state'] *= 0.0
                 obs['state'] = leave_y(obs['state'])

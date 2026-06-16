@@ -1,7 +1,8 @@
 import os
 from pathlib import Path
 import math
-import gym
+# import gym
+import gymnasium as gym
 
 import jax
 import jax.numpy as jnp
@@ -59,24 +60,26 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
             #     # "device_index": 0,
             #     "dim": (1280, 720),
             # },
-            # "wrist_1": {
-            #     "camera_index": 0,
-            #     "dim": (1280, 720),
-            # },
+            "wrist_1": {
+                "camera_index": 2,
+                "dim": (1280, 720),
+            },
             # "wrist_2": {
             #     "camera_index": 0,
             #     "dim": (1280, 720),
+            #     # "exposure": 450.0,
             # },
-            "static_1": {
-                "camera_index": 3,
-                "dim": (640, 480),
-            },
+            # "static_1": {
+            #     "camera_index": 3,
+            #     "dim": (1280, 720),
+            # },
         }
         IMAGE_CROP = {
-            # "wrist_1": lambda img: img[5:195, 600:835],
+            "wrist_1": lambda img: img[280:, 320:960],
             # "wrist_2": lambda img: img[40:360, 520:840],
-            # "wrist_2": lambda img: img[278:684, 600:1066]#,[191:656, 295:787],
-            "static_1": lambda img: img[:, 160:]#,[191:656, 295:787],
+
+            # "wrist_2": lambda img: img[278:684, 600:1066], #,[191:656, 295:787],
+            # "static_1": lambda img: img[:, 560:],
         }
         # ARUCO_POSE_MATRIX = aruco_pose_mat
         ARUCO_POSE_SERVICE_NAME = os.environ.get(
@@ -188,7 +191,9 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
         RANDOM_RESET_TIMEOUT = 0.5
         AUTO_QUICK_REGRASP = True
         # RL 探索速度（平移、旋转、夹爪）
-        ACTION_SCALE = (0.01, 0.0, 1)
+        ACTION_SCALE = [0.005, 0.005, 1] 
+        # ACTION_SCALE = [0.01, 0.01, 1] 
+
         # SpaceMouse 介入时的额外缩放（会叠加到 ACTION_SCALE 上）
         SPACEMOUSE_LINEAR_SCALE = 1.0
         SPACEMOUSE_ANGULAR_SCALE = 1.0
@@ -365,6 +370,55 @@ else:
         }
 
 
+class TiltObsWrapper(gym.ObservationWrapper):
+    """
+    This observation wrapper add tilt of tcp to state.
+    """
+    def __init__(self, env):
+        super().__init__(env)
+        self.observation_space = gym.spaces.Dict({
+            "state": gym.spaces.Dict({
+                **self.env.observation_space["state"],
+                "tilt": gym.spaces.Box(-3, 3, shape=(1,))
+            }),
+            "images": gym.spaces.Dict({
+                **self.env.observation_space["images"]
+            })
+        })
+
+    def _ee_axis_from_rpy(self, roll, pitch, yaw):
+        # R = Rz(yaw) @ Ry(pitch) @ Rx(roll)
+        cr = math.cos(roll); sr = math.sin(roll)
+        cp = math.cos(pitch); sp = math.sin(pitch)
+        cy = math.cos(yaw); sy = math.sin(yaw)
+        # third column of R (end-effector local z axis in world frame)
+        vx = cy * sp * cr + sy * sr
+        vy = sy * sp * cr - cy * sr
+        vz = cp * cr
+        return vx, vy, vz
+
+    def _tilt_from_xy(self, vx, vy, vz):
+        # angle between axis and XY plane
+        return math.atan2(vz, math.hypot(vx, vy))
+
+    def observation(self, obs):
+        tilt = self._tilt_from_xy(
+            *self._ee_axis_from_rpy(*obs["state"]["tcp_pose"][3:])
+        )
+        obs = {
+            "state": {
+                **obs["state"],
+                "tilt": tilt,
+            },
+            "images": obs["images"],
+        }
+        return obs
+
+    def reset(self, **kwargs):
+        obs, info =  self.env.reset(**kwargs)
+        return self.observation(obs), info
+
+
 class FailureOnTiltWrapper(gym.Wrapper):
     """Terminate episode with failure if end-effector axis tilts > max_tilt_deg from XY plane.
 
@@ -401,11 +455,12 @@ class FailureOnTiltWrapper(gym.Wrapper):
             if pose is not None and len(pose) >= 6:
                 roll, pitch, yaw = float(pose[3]), float(pose[4]), float(pose[5])
                 vx, vy, vz = self._ee_axis_from_rpy(roll, pitch, yaw)
-                tilt = self._tilt_from_xy(vx, vy, vz)
+                # tilt = self._tilt_from_xy(vx, vy, vz)
+
+                tilt = obs['state']['tilt']
                 # print("x: %.3f, y: %.3f, z: %.3f" % (pose[0], pose[1], pose[2]))
                 # print("\ntilt: %.3f" % tilt)
-
-                if tilt > self.max_tilt_rad:
+                if tilt > self.max_tilt_rad * 3.0:
                     # mark failure: set done and annotate info
                     done = True
                     info = dict(info or {})
@@ -415,17 +470,40 @@ class FailureOnTiltWrapper(gym.Wrapper):
                     info["tilt_deg"] = math.degrees(tilt)
                     # optionally set reward to 0 or a negative penalty
                     reward = 0.0
-
                     print("\033[91m[INFO] tilt too much, failure !!!\033[0m")
-                elif pose[2] <= 0.93:
+                elif pose[2] <= 0.935:
                     done = True
                     info = dict(info or {})
                     info['succeed'] = True
                     info["failure_reason"] = ""
                     # optionally set reward to 0 or a negative penalty
                     reward = 1.0
-
                     print("\033[32m[INFO] z satisfy success condition!\033[0m")
+                else:
+                    eef_force = obs['state'].get('eef_force')
+                    if  eef_force != None:
+                        fx, fy, fz, tx, ty, tz = eef_force
+                        scale = 1.5
+                        if fy <= -15.0 * scale or min(math.fabs(fx), math.fabs(fz)) >= 20.0 * scale:
+                            done = True
+                            info = dict(info or {})
+                            info['succeed'] = False
+                            info["failure_reason"] = "hit_something"
+                            info["skip_regrasp"] = True
+                            reward = 0.0
+                            print("\033[91m[INFO] Hit on something, failure !!!\033[0m")
+
+                if (pose[0] < 0.86 or pose[0] > 0.95 or 
+                    pose[1] < -0.24 - 0.05 or pose[1] > -0.24 + 0.05 or
+                    pose[2] < -0.90 or pose[2] > 0.92 + 0.1):
+                    done = True
+                    info = dict(info or {})
+                    info['succeed'] = False
+                    info["failure_reason"] = "out_of_range"
+                    info["skip_regrasp"] = True
+                    reward = 0.0
+                    print("\033[91m[INFO] out of range, failure !!!\033[0m")
+                # print(pose)
 
         except Exception:
             # be conservative: do not crash the wrapper on unexpected obs format
@@ -460,10 +538,9 @@ class TrainConfig(DefaultTrainingConfig):
             save_video=save_video,
             config=env_config,
         )
-
         # print(env._joints_deg_to_pose6(env_config.TARGET_JOINTS))
         # print(env._joints_deg_to_matrix(env_config.TARGET_JOINTS))
-        
+
         # env = SleepEnv(env, control_time=env_config.CONTROL_TIME)
         env = GripperCloseEnv(env)
         if not fake_env:
@@ -477,6 +554,7 @@ class TrainConfig(DefaultTrainingConfig):
                 expert_angular_scale=getattr(env_config, "SPACEMOUSE_ANGULAR_SCALE", 1.0),
             )
         # check tilt after proprio (tcp_pose should be present, in radians)
+        env = TiltObsWrapper(env)
         env = FailureOnTiltWrapper(env, max_tilt_deg=getattr(env_config, "MAX_TILT_DEG", MAX_TILT_DEGREE))
         env = SleepEnv(env, control_time=env_config.CONTROL_TIME)
         env = RelativeFrame(env)

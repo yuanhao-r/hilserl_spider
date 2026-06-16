@@ -9,17 +9,19 @@ import time
 from collections import OrderedDict, deque
 from datetime import datetime
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Sequence
 
 import cv2
 import gymnasium as gym
 import numpy as np
 from scipy.spatial.transform import Rotation
 from multiprocess import Process, Queue
+from loop_rate_limiters import RateLimiter
 
 from franka_env.camera.fisheye_capture import FisheyeCapture
 from franka_env.camera.rs_capture import RSCapture
 from franka_env.camera.video_capture import VideoCapture
+from franka_env.envs.tianji_ik_client import TianjiIKClient
 from franka_env.envs.wow_skin import WowSkin
 from scipy.linalg import expm
 
@@ -48,6 +50,120 @@ class ImageDisplayer(Process):
             cv2.waitKey(1)
 
 
+class RealtimeForce6DPlotter:
+    """Non-blocking realtime plotter for 6D force/torque samples."""
+
+    DEFAULT_LABELS = ("Fx", "Fy", "Fz", "Tx", "Ty", "Tz")
+
+    def __init__(
+        self,
+        max_points: int = 100,
+        update_interval: float = 0.05,
+        title: str = "Realtime 6D Force",
+        labels: Sequence[str] | None = None,
+    ):
+        self.max_points = int(max_points)
+        self.update_interval = float(update_interval)
+        self.title = title
+        self.labels = tuple(labels) if labels is not None else self.DEFAULT_LABELS
+        if len(self.labels) != 6:
+            raise ValueError("labels must contain exactly 6 names")
+
+        self._times = deque(maxlen=self.max_points)
+        self._values = deque(maxlen=self.max_points)
+        self._start_t = time.monotonic()
+        self._last_draw_t = 0.0
+        self._closed = False
+
+        self._plt = None
+        self._fig = None
+        self._axes = None
+        self._lines = None
+
+    def add_force_point(self, force6d, timestamp: float | None = None) -> None:
+        """Append one 6D sample and refresh the plot at the configured rate."""
+        values = np.asarray(force6d, dtype=np.float64).reshape(-1)
+        if values.shape[0] != 6:
+            raise ValueError(f"force6d must have 6 values, got shape {values.shape}")
+
+        sample_t = time.monotonic() if timestamp is None else float(timestamp)
+        plot_t = sample_t - self._start_t if timestamp is None else sample_t
+        self._times.append(plot_t)
+        self._values.append(values.copy())
+
+        now = time.monotonic()
+        if now - self._last_draw_t >= self.update_interval:
+            self._draw()
+            self._last_draw_t = now
+
+    def add_point(self, force6d, timestamp: float | None = None) -> None:
+        """Alias for add_force_point()."""
+        self.add_force_point(force6d, timestamp=timestamp)
+
+    def reset(self) -> None:
+        self._times.clear()
+        self._values.clear()
+        self._start_t = time.monotonic()
+        self._last_draw_t = 0.0
+        if self._lines is not None:
+            for line in self._lines:
+                line.set_data([], [])
+            self._draw(force=True)
+
+    def close(self) -> None:
+        self._closed = True
+        if self._plt is not None and self._fig is not None:
+            self._plt.close(self._fig)
+
+    def _ensure_plot(self) -> None:
+        if self._fig is not None:
+            return
+
+        import matplotlib.pyplot as plt
+
+        self._plt = plt
+        self._plt.ion()
+        self._fig, self._axes = self._plt.subplots(2, 1, sharex=True, figsize=(9, 6))
+        self._fig.canvas.manager.set_window_title(self.title)
+        self._fig.suptitle(self.title)
+
+        self._lines = []
+        for idx, label in enumerate(self.labels):
+            axis = self._axes[0] if idx < 3 else self._axes[1]
+            (line,) = axis.plot([], [], label=label, linewidth=0.5, marker=".")
+            self._lines.append(line)
+
+        self._axes[0].set_ylabel("Force")
+        self._axes[1].set_ylabel("Torque")
+        self._axes[1].set_xlabel("Time (s)")
+        for axis in self._axes:
+            axis.grid(True, alpha=0.35)
+            axis.legend(loc="upper right")
+
+        self._fig.tight_layout()
+        self._plt.show(block=False)
+
+    def _draw(self, force: bool = False) -> None:
+        if self._closed or (not force and not self._times):
+            return
+
+        self._ensure_plot()
+        xs = np.asarray(self._times, dtype=np.float64)
+        ys = np.asarray(self._values, dtype=np.float64)
+        if ys.size == 0:
+            ys = np.empty((0, 6), dtype=np.float64)
+
+        for idx, line in enumerate(self._lines):
+            line.set_data(xs, ys[:, idx] if len(ys) else [])
+
+        for axis in self._axes:
+            axis.relim()
+            axis.autoscale_view()
+
+        self._fig.canvas.draw_idle()
+        self._fig.canvas.flush_events()
+
+
 def _inject_tianji_paths() -> Path:
     """Ensure test_teleop paths are importable for Tianji SDK and IK modules."""
     workspace_root = Path(__file__).resolve().parents[4]
@@ -66,6 +182,7 @@ def _inject_tianji_paths() -> Path:
 
 _TELEOP_ROOT = _inject_tianji_paths()
 _MARVIN_IMPORT_ERROR = None
+_DUAL_IK_IMPORT_ERROR = None
 
 try:
     from marvin_arm_controller import MarvinArmController
@@ -73,13 +190,17 @@ try:
         transform_to_wxyzxyz,
         wxyzxyz_to_transform,
     )
-    from utils.marvin_dual_arm_waist_teleop import DualArmWaistIK
 except Exception as exc:  # pragma: no cover - runtime dependency check
     _MARVIN_IMPORT_ERROR = exc
     MarvinArmController = None
-    DualArmWaistIK = None
     transform_to_wxyzxyz = None
     wxyzxyz_to_transform = None
+
+try:
+    from utils.marvin_dual_arm_waist_teleop import DualArmWaistIK
+except Exception as exc:  # pragma: no cover - runtime dependency check
+    _DUAL_IK_IMPORT_ERROR = exc
+    DualArmWaistIK = None
 
 
 class DefaultTianjiEnvConfig:
@@ -99,6 +220,9 @@ class DefaultTianjiEnvConfig:
     RESET_POSE: np.ndarray = np.zeros((6,))
     REWARD_THRESHOLD: np.ndarray = np.zeros((6,))
 
+    CONTROL_FREQ: float = 20.0
+    IK_SERVER_URL: str | None = None # "http://127.0.0.1:8765"
+    IK_SERVER_TIMEOUT: float = 1.0
     ACTION_SCALE = np.zeros((3,))
     # 复位/示教等插值运动参数（不影响策略 step 主频）
     INTERPOLATE_HZ: float = 40.0
@@ -153,7 +277,7 @@ class DefaultTianjiEnvConfig:
     ABS_POSE_LIMIT_LOW = np.array([-0.20, -0.55, 0.40, -np.pi, -np.pi, -np.pi])
     # 若配置的安全框与真实关键位姿(当前/RESET/TARGET/GRASP)不一致，自动扩框避免“被边界吸住”
     AUTO_EXPAND_ABS_POSE_LIMIT: bool = True
-    ABS_POSE_LIMIT_EXPAND_MARGIN_XYZ = np.array([0.05, 0.05, 0.05], dtype=np.float64)
+    ABS_POSE_LIMIT_EXPAND_MARGIN_XYZ = np.array([0.1, 0.1, 0.1], dtype=np.float64)
 
     COMPLIANCE_PARAM: Dict[str, float] = {}
     RESET_PARAM: Dict[str, float] = {}
@@ -227,6 +351,8 @@ class TianjiEnv(gym.Env):
         self.config = config
         self.fake_env = fake_env
 
+        self.rate_limiter = RateLimiter(self.config.CONTROL_FREQ)
+        self.last_timestamp = 0.0
         self.action_scale = config.ACTION_SCALE
         self._TARGET_POSE = np.array(config.TARGET_POSE, dtype=np.float64)
         self._RESET_POSE = np.array(config.RESET_POSE, dtype=np.float64)
@@ -354,6 +480,7 @@ class TianjiEnv(gym.Env):
 
         self.controller = None
         self.full_ik_solver = None
+        self.ik_client = None
         self._warned_gripper_unavailable = False
         # 关节空间直控/模式切换后，下一次 IK 需要用当前实测关节角重新对齐种子
         self._ik_need_seed_refresh = True
@@ -423,13 +550,30 @@ class TianjiEnv(gym.Env):
                 )
             self._has_right_gripper_api = hasattr(self.controller, "right_gripper")
 
-            
-            self.full_ik_solver = DualArmWaistIK(
-                urdf_path=config.DUAL_IK_URDF_PATH,
-                enable_viewer=False,
-            )
-            self.full_ik_solver.set_scale(1.0, 1.0)
-            self.full_ik_solver.start()
+            ik_server_url = os.environ.get(
+                "HILSERL_TIANJI_IK_URL",
+                getattr(config, "IK_SERVER_URL", None) or "",
+            ).strip()
+            if ik_server_url:
+                self.ik_client = TianjiIKClient(
+                    ik_server_url,
+                    timeout=float(getattr(config, "IK_SERVER_TIMEOUT", 1.0)),
+                )
+                print(f"Using remote Tianji IK server: {ik_server_url}")
+            else:
+                if _DUAL_IK_IMPORT_ERROR is not None:
+                    raise ImportError(
+                        "Failed to import Tianji IK dependencies. Start "
+                        "examples/utils/tianji_ik_server.py and set "
+                        "HILSERL_TIANJI_IK_URL to use remote IK, or install local "
+                        "IK dependencies."
+                    ) from _DUAL_IK_IMPORT_ERROR
+                self.full_ik_solver = DualArmWaistIK(
+                    urdf_path=config.DUAL_IK_URDF_PATH,
+                    enable_viewer=False,
+                )
+                self.full_ik_solver.set_scale(1.0, 1.0)
+                self.full_ik_solver.start()
 
             self.base_right_tf = wxyzxyz_to_transform(
                 np.array(config.RIGHT_ARM_BASE_POSE_WXYZXYZ, dtype=np.float64)
@@ -489,6 +633,7 @@ class TianjiEnv(gym.Env):
                         "gripper_pose": gym.spaces.Box(-1, 1, shape=(1,)),
                         "tcp_force": gym.spaces.Box(-np.inf, np.inf, shape=(15,)),
                         "tcp_torque": gym.spaces.Box(-np.inf, np.inf, shape=(3,)),
+                        "eef_force": gym.spaces.Box(-np.inf, np.inf, shape=(6,)),
                     }
                 ),
                 "images": gym.spaces.Dict(
@@ -516,6 +661,8 @@ class TianjiEnv(gym.Env):
             self.img_queue = Queue()
             self.displayer = ImageDisplayer(self.img_queue, f"tianji_{self.robot_ip}")
             self.displayer.start()
+
+        self.forece6d_plotter = RealtimeForce6DPlotter(max_points=300, update_interval=0.05)
 
         if set_load:
             pass
@@ -955,6 +1102,8 @@ class TianjiEnv(gym.Env):
                 print(
                     "[SAFETY_BOX] auto-expand"
                     f"{'' if reason == '' else f'({reason})'} "
+                    f"xyz_bounding_box.low={np.round(cur_low, 4).tolist()} "
+                    f"xyz_bounding_box.high={np.round(cur_high, 4).tolist()} "
                     f"xyz_low={np.round(new_low, 4).tolist()} "
                     f"xyz_high={np.round(new_high, 4).tolist()}"
                 )
@@ -990,6 +1139,8 @@ class TianjiEnv(gym.Env):
 
     def step(self, action: np.ndarray) -> tuple:
         start_time = time.time()
+        print("infer time: ", start_time - self.last_timestamp)
+
         action = np.clip(action, self.action_space.low, self.action_space.high)
 
         if self._post_reset_realign_pending and (not self._has_control_intent(action)):
@@ -1070,7 +1221,11 @@ class TianjiEnv(gym.Env):
 
         # T_final = T_relative @ T_initial
         T_relative = expm(twist_mat)
-        T_target_new = T_relative @ T_target
+        # target_t = T_target[:3, 3]
+        # T_target[:3, 3] = 0.0
+        T_target_new = np.eye(4)
+        T_target_new[:3, :3] = T_relative[:3, :3] @ T_target[:3, :3]
+        T_target_new[:3, 3] = T_target[:3, 3] + T_relative[:3, 3]
 
         # 5. 还原回 6D pose 并更新 cmd_pose
         self.nextpos = _transform_to_pose6(T_target_new)
@@ -1099,13 +1254,22 @@ class TianjiEnv(gym.Env):
         # 彻底解决碰到边界后“积分饱和”导致按键失灵的问题
         self.cmd_pose = safe_target.copy()
 
+        exec_time = time.time() - start_time
+        print("before ik time: ", exec_time)
+
         self._send_pos_command(safe_target)
 
         self.curr_path_length += 1
-        _ = time.time() - start_time
-
+        exec_time = time.time() - start_time
+        print("ik time: ", exec_time)
         self._update_currpos()
+
+        self.rate_limiter.sleep()
+        exec_time = time.time() - start_time
+        print("sync time: ", exec_time)
         ob = self._get_obs()
+        print("obs time: ", time.time() - start_time - exec_time)
+    
         reward, finish = -0.02, False
         done = (
             self.curr_path_length >= self.max_episode_length
@@ -1113,6 +1277,9 @@ class TianjiEnv(gym.Env):
             or getattr(self, "terminate", False)
         )
 
+        # self.forece6d_plotter.add_point(ob["state"]["eef_force"])
+
+        self.last_timestamp = time.time()
         return ob, reward, done, False, {"succeed": finish}
 
     def compute_reward(self, obs):
@@ -1609,7 +1776,10 @@ class TianjiEnv(gym.Env):
             self.quick_regrasp_dwell_final_top_sec,
             reason="quick_regrasp final TOP",
         )
-        
+
+    def reset_cycle(self):
+        print('resetting cycle')
+        self.rate_limiter = RateLimiter(self.config.CONTROL_FREQ)
 
     def reset(self, joint_reset=False, replay_start_pose=None, **kwargs):
         self._enter_reset_motion_mode(reason="TianjiEnv.reset")
@@ -1657,6 +1827,7 @@ class TianjiEnv(gym.Env):
         finally:
             if not restored_mode:
                 self._restore_control_mode_after_reset(reason="TianjiEnv.reset")
+            self.reset_cycle()
 
     def save_video_recording(self):
         try:
@@ -1703,6 +1874,7 @@ class TianjiEnv(gym.Env):
                 self.cap[cam_name] = cap
             else:
                 print(f"Can NOT figure camera config for: {cam_name}")
+
 
     def close_cameras(self):
         try:
@@ -1796,6 +1968,64 @@ class TianjiEnv(gym.Env):
             raise NotImplementedError("Continuous gripper control is optional")
 
     # right arm pose only
+    def _compute_full_body_ik(
+        self,
+        current_ql: np.ndarray,
+        current_qr: np.ndarray,
+        force_seed_from_current: bool,
+    ):
+        if self.ik_client is not None:
+            result = self.ik_client.solve(
+                current_ql_rad=current_ql,
+                current_qr_rad=current_qr,
+                left_target_pose=self.left_target_pose,
+                right_target_pose=self.right_target_pose,
+                head_target_pose=self.head_target_pose,
+                body_waist_q=self.body_waist_q,
+                head_z_offset=self.head_z_offset,
+                force_seed_from_current=force_seed_from_current,
+            )
+            ql_target = np.array(result["ql_target_rad"], dtype=np.float64)
+            qr_target = np.array(result["qr_target_rad"], dtype=np.float64)
+            return ql_target, qr_target
+
+        left_hand_target = transform_to_wxyzxyz(self.left_target_pose)
+        right_hand_target = transform_to_wxyzxyz(self.right_target_pose)
+        head_target = transform_to_wxyzxyz(self.head_target_pose)
+
+        left_pose_xyzwxyz = np.concatenate(
+            [left_hand_target[4:7], left_hand_target[0:4]]
+        )
+        right_pose_xyzwxyz = np.concatenate(
+            [right_hand_target[4:7], right_hand_target[0:4]]
+        )
+        head_pose_xyzwxyz = np.concatenate([head_target[4:7], head_target[0:4]])
+        head_pose_xyzwxyz[2] += self.head_z_offset
+
+        current_cfg = list(self.body_waist_q) + list(current_qr) + list(current_ql)
+        if force_seed_from_current and hasattr(self.full_ik_solver, "sync_with_current_cfg"):
+            self.full_ik_solver.sync_with_current_cfg(
+                current_cfg[2:], reset_delta_reference=True
+            )
+            ik_seed_cfg = None
+        else:
+            ik_seed_cfg = current_cfg[2:]
+
+        solver_cfg, _ = self.full_ik_solver.compute_ik(
+            ik_seed_cfg,
+            head_pose_xyzwxyz,
+            right_pose_xyzwxyz,
+            left_pose_xyzwxyz,
+            force_seed_from_current=force_seed_from_current,
+        )
+        if solver_cfg is None:
+            return None, None
+
+        solver_cfg = np.concatenate([current_cfg[:2], solver_cfg])
+        qr_target = solver_cfg[2:9]
+        ql_target = solver_cfg[9:]
+        return ql_target, qr_target
+
     def _solve_ik(self, pose):
         if self.fake_env:
             return None
@@ -1807,39 +2037,15 @@ class TianjiEnv(gym.Env):
         try:
             current_ql = self.controller.get_joint_pos_rad(arm_id=1)
             current_qr = self.controller.get_joint_pos_rad(arm_id=2)
-
-            left_hand_target = transform_to_wxyzxyz(self.left_target_pose)
-            right_hand_target = transform_to_wxyzxyz(self.right_target_pose)
-            head_target = transform_to_wxyzxyz(self.head_target_pose)
-
-            left_pose_xyzwxyz = np.concatenate(
-                [left_hand_target[4:7], left_hand_target[0:4]]
-            )
-            right_pose_xyzwxyz = np.concatenate(
-                [right_hand_target[4:7], right_hand_target[0:4]]
-            )
-            head_pose_xyzwxyz = np.concatenate([head_target[4:7], head_target[0:4]])
-            head_pose_xyzwxyz[2] += self.head_z_offset
-
-            current_cfg = list(self.body_waist_q) + list(current_qr) + list(current_ql)
-            ik_seed_cfg = current_cfg[2:]
-            solver_cfg, _ = self.full_ik_solver.compute_ik(
-                ik_seed_cfg,
-                head_pose_xyzwxyz,
-                right_pose_xyzwxyz,
-                left_pose_xyzwxyz,
+            ql_target, qr_target = self._compute_full_body_ik(
+                current_ql=current_ql,
+                current_qr=current_qr,
                 force_seed_from_current=False,
             )
-
-            if solver_cfg is None:
+            if qr_target is None:
                 return None
             self._ik_need_seed_refresh = True
 
-            solver_cfg = np.concatenate([current_cfg[:2], solver_cfg])
-            qr_target = solver_cfg[2:9]
-            ql_target = solver_cfg[9:]
-
-            joint_cmd_left = np.array(ql_target / self.controller.DEG_TO_RAD, dtype=np.float64)
             joint_cmd_right = np.array(qr_target / self.controller.DEG_TO_RAD, dtype=np.float64)
 
             return joint_cmd_right
@@ -1853,44 +2059,15 @@ class TianjiEnv(gym.Env):
         try:
             current_ql = self.controller.get_joint_pos_rad(arm_id=1)
             current_qr = self.controller.get_joint_pos_rad(arm_id=2)
-
-            left_hand_target = transform_to_wxyzxyz(self.left_target_pose)
-            right_hand_target = transform_to_wxyzxyz(self.right_target_pose)
-            head_target = transform_to_wxyzxyz(self.head_target_pose)
-
-            left_pose_xyzwxyz = np.concatenate(
-                [left_hand_target[4:7], left_hand_target[0:4]]
-            )
-            right_pose_xyzwxyz = np.concatenate(
-                [right_hand_target[4:7], right_hand_target[0:4]]
-            )
-            head_pose_xyzwxyz = np.concatenate([head_target[4:7], head_target[0:4]])
-            head_pose_xyzwxyz[2] += self.head_z_offset
-
-            current_cfg = list(self.body_waist_q) + list(current_qr) + list(current_ql)
             force_seed_from_current = bool(self._ik_need_seed_refresh)
-            if force_seed_from_current and hasattr(self.full_ik_solver, "sync_with_current_cfg"):
-                self.full_ik_solver.sync_with_current_cfg(
-                    current_cfg[2:], reset_delta_reference=True
-                )
-                ik_seed_cfg = None
-            else:
-                ik_seed_cfg = current_cfg[2:]
-            solver_cfg, _ = self.full_ik_solver.compute_ik(
-                ik_seed_cfg,
-                head_pose_xyzwxyz,
-                right_pose_xyzwxyz,
-                left_pose_xyzwxyz,
+            ql_target, qr_target = self._compute_full_body_ik(
+                current_ql=current_ql,
+                current_qr=current_qr,
                 force_seed_from_current=force_seed_from_current,
             )
-
-            if solver_cfg is None:
+            if ql_target is None or qr_target is None:
                 return -1
             self._ik_need_seed_refresh = False
-
-            solver_cfg = np.concatenate([current_cfg[:2], solver_cfg])
-            qr_target = solver_cfg[2:9]
-            ql_target = solver_cfg[9:]
 
             joint_cmd_left = np.array(ql_target / self.controller.DEG_TO_RAD, dtype=np.float64)
             joint_cmd_right = np.array(qr_target / self.controller.DEG_TO_RAD, dtype=np.float64)
@@ -1961,12 +2138,15 @@ class TianjiEnv(gym.Env):
 
     def _get_obs(self) -> dict:
         images = self.get_im()
+        # right arm eef force
+        eef_force = self.controller.get_eef_force(arm_id=2)
         state_observation = {
             "tcp_pose": self.currpos,
             "tcp_vel": self.currvel,
             "gripper_pose": self.curr_gripper_pos,
             "tcp_force": self.currforce,
             "tcp_torque": self.currtorque,
+            "eef_force": eef_force
         }
         return copy.deepcopy(dict(images=images, state=state_observation))
 

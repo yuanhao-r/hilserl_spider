@@ -5,6 +5,6 @@ export XLA_PYTHON_CLIENT_MEM_FRACTION=.1 && \
 python ../../train_rlpd.py "$@" \
     --exp_name=ram_insertion \
     --actor \
-    --checkpoint_path=first_run_260529 \
+    --checkpoint_path=first_run_260611_2 \
 
     # --replay_intervention_path=./demo_data/ram_insertion_20_demos_2026-04-24_11-42-47.pkl \
