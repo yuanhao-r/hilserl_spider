@@ -52,7 +52,7 @@ def read_fisheye_camera(camera_indexes=[0]):
         
     image_crop = None # lambda img: img[150:390, 500:820]
     # image_crop = lambda img: img[600:1166, 278:784]
-    image_crop = lambda img: img[280:, 320:960]
+    #image_crop = lambda img: img[280+50: 280+300, 320+310:640+200]
 
 
     cnt = 0    

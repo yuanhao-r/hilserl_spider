@@ -344,6 +344,19 @@ class SACAgent(flax.struct.PyTreeNode):
         else:
             return dist.sample(seed=seed)
 
+    @jax.jit
+    def evaluate_actions_q(
+        self,
+        observations: Data,
+        actions: jax.Array,
+    ) -> dict:
+        qs = self.forward_critic(observations, actions, rng=None, train=False)
+        return {
+            "q_min": qs.min(),
+            "q_mean": qs.mean(),
+            "q_max": qs.max(),
+        }
+
     @classmethod
     def create(
         cls,

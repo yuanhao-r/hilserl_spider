@@ -35,9 +35,15 @@ class ImageDisplayer(Process):
 
     def run(self):
         while True:
-            img_array = self.queue.get()
-            if img_array is None:
+            msg = self.queue.get()
+            if msg is None:
                 break
+            if isinstance(msg, dict) and "images" in msg:
+                img_array = msg["images"]
+                overlay_text = msg.get("overlay_text") or []
+            else:
+                img_array = msg
+                overlay_text = []
             frame = np.concatenate(
                 [
                     cv2.resize(v, IMAGE_SIZE)
@@ -46,6 +52,17 @@ class ImageDisplayer(Process):
                 ],
                 axis=1,
             )
+            for idx, text in enumerate(overlay_text):
+                cv2.putText(
+                    frame,
+                    str(text),
+                    (10, 24 + idx * 24),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    (50, 255, 80),
+                    2,
+                    cv2.LINE_AA,
+                )
             cv2.imshow(self.name, frame)
             cv2.waitKey(1)
 
@@ -224,6 +241,8 @@ class DefaultTianjiEnvConfig:
     IK_SERVER_URL: str | None = None # "http://127.0.0.1:8765"
     IK_SERVER_TIMEOUT: float = 1.0
     ACTION_SCALE = np.zeros((3,))
+    SYNC_CMD_POSE_TO_CURRPOS_EACH_STEP: bool = False
+    DEBUG_CMD_POSE_TRACKING: bool = False
     # 复位/示教等插值运动参数（不影响策略 step 主频）
     INTERPOLATE_HZ: float = 40.0
     INTERPOLATE_MAX_STEP_DEG: float = 0.8
@@ -364,6 +383,7 @@ class TianjiEnv(gym.Env):
         self.robot_ip = config.ROBOT_IP
         self.max_episode_length = config.MAX_EPISODE_LENGTH
         self.display_image = config.DISPLAY_IMAGE
+        self.display_overlay_text = []
         self.gripper_sleep = config.GRIPPER_SLEEP
         self.hz = hz
         self.interpolate_hz = float(getattr(config, "INTERPOLATE_HZ", 40.0))
@@ -419,6 +439,12 @@ class TianjiEnv(gym.Env):
         )
         self.reset_handoff_drop_first_control_step = bool(
             getattr(config, "RESET_HANDOFF_DROP_FIRST_CONTROL_STEP", True)
+        )
+        self.sync_cmd_pose_to_currpos_each_step = bool(
+            getattr(config, "SYNC_CMD_POSE_TO_CURRPOS_EACH_STEP", False)
+        )
+        self.debug_cmd_pose_tracking = bool(
+            getattr(config, "DEBUG_CMD_POSE_TRACKING", False)
         )
         self.reset_use_position_mode = bool(
             getattr(config, "RESET_USE_POSITION_MODE", True)
@@ -993,6 +1019,9 @@ class TianjiEnv(gym.Env):
         eps = max(0.0, float(self.reset_handoff_unlock_action_eps))
         return float(np.max(np.abs(arr[:6]))) > eps
 
+    def set_sync_cmd_pose_to_currpos_once(self, enabled: bool | None):
+        self._sync_cmd_pose_to_currpos_once = None if enabled is None else bool(enabled)
+
     def _async_handoff_hold_alive(self) -> bool:
         th = getattr(self, "_handoff_hold_thread", None)
         return bool(th is not None and th.is_alive())
@@ -1138,6 +1167,9 @@ class TianjiEnv(gym.Env):
         return pose
 
     def step(self, action: np.ndarray) -> tuple:
+        # TODO: remove after test
+        self.rate_limiter = RateLimiter(self.config.CONTROL_FREQ)
+
         start_time = time.time()
         print("infer time: ", start_time - self.last_timestamp)
 
@@ -1193,6 +1225,23 @@ class TianjiEnv(gym.Env):
         # 1. 确保指令目标状态被正确初始化 (阻断 IK/FK 累积误差)
         if not hasattr(self, "cmd_pose"):
             self.cmd_pose = self.currpos.copy()
+        sync_cmd_pose = getattr(self, "_sync_cmd_pose_to_currpos_once", None)
+        self._sync_cmd_pose_to_currpos_once = None
+        if sync_cmd_pose is None:
+            sync_cmd_pose = self.sync_cmd_pose_to_currpos_each_step
+        if sync_cmd_pose:
+            self._update_currpos()
+            if self.debug_cmd_pose_tracking:
+                print(
+                    "[cmd_pose_debug] before_sync "
+                    f"cmd-current={np.round(self.cmd_pose - self.currpos, 6).tolist()} "
+                    f"action={np.round(action[:6], 6).tolist()}",
+                    flush=True,
+                )
+            self.cmd_pose = self.currpos.copy()
+            self.nextpos = self.currpos.copy()
+
+        print("current cmd_pose: ", self.cmd_pose)
 
         # 2. 将当前的 6D cmd_pose 转换为 4x4 变换矩阵 (T_target)
         T_target = _pose6_to_transform(self.cmd_pose)
@@ -1229,7 +1278,10 @@ class TianjiEnv(gym.Env):
 
         # 5. 还原回 6D pose 并更新 cmd_pose
         self.nextpos = _transform_to_pose6(T_target_new)
-        
+        print("current tcp_pose: ", self.currpos)
+
+        print("goto nextpos: ", self.nextpos,flush=True)
+
         # self.cmd_pose = self.nextpos.copy()
 
         # 6. 发送指令
@@ -1253,24 +1305,34 @@ class TianjiEnv(gym.Env):
         # 【关键修复】：必须将 cmd_pose 强制对齐到 safe_target！
         # 彻底解决碰到边界后“积分饱和”导致按键失灵的问题
         self.cmd_pose = safe_target.copy()
+        if self.debug_cmd_pose_tracking:
+            print(
+                "[cmd_pose_debug] command "
+                f"safe-current={np.round(safe_target - self.currpos, 6).tolist()} "
+                f"safe={np.round(safe_target, 6).tolist()} "
+                f"current={np.round(self.currpos, 6).tolist()}",
+                flush=True,
+            )
+        print("goto cmd_pose: ", self.cmd_pose)
 
         exec_time = time.time() - start_time
-        print("before ik time: ", exec_time)
+        # print("before ik time: ", exec_time)
 
         self._send_pos_command(safe_target)
 
         self.curr_path_length += 1
         exec_time = time.time() - start_time
-        print("ik time: ", exec_time)
-        self._update_currpos()
-
+        # print("ik time: ", exec_time)
         self.rate_limiter.sleep()
         exec_time = time.time() - start_time
         print("sync time: ", exec_time)
+
+        self._update_currpos()
+
         ob = self._get_obs()
-        print("obs time: ", time.time() - start_time - exec_time)
+        # print("obs time: ", time.time() - start_time - exec_time)
     
-        reward, finish = -0.02, False
+        reward, finish = 0, False
         done = (
             self.curr_path_length >= self.max_episode_length
             or finish
@@ -1336,9 +1398,17 @@ class TianjiEnv(gym.Env):
             self.recording_frames.append(full_res_images)
 
         if self.display_image:
-            self.img_queue.put(display_images)
+            self.img_queue.put(
+                {
+                    "images": display_images,
+                    "overlay_text": list(self.display_overlay_text),
+                }
+            )
 
         return images
+
+    def set_display_overlay(self, lines: Sequence[str] | None) -> None:
+        self.display_overlay_text = [] if lines is None else [str(line) for line in lines]
 
     def interpolate_move(
         self,
@@ -1888,6 +1958,7 @@ class TianjiEnv(gym.Env):
             return 0
 
         arr = np.array(pos, dtype=np.float64)
+        self.cmd_pose = arr.copy()
         target_tf = _pose6_to_transform(arr)
         self.right_target_pose = target_tf
         return self._solve_and_send_ik()

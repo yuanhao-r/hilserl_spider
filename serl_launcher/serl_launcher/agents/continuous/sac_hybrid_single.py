@@ -438,6 +438,25 @@ class SACAgentHybridSingleArm(flax.struct.PyTreeNode):
 
         return jnp.concatenate([ee_actions, grasp_action[..., None]], axis=-1)
 
+    @jax.jit
+    def evaluate_actions_q(
+        self,
+        observations: Data,
+        actions: jax.Array,
+    ) -> dict:
+        continuous_actions = actions[..., :-1]
+        qs = self.forward_critic(
+            observations,
+            continuous_actions,
+            rng=None,
+            train=False,
+        )
+        return {
+            "q_min": qs.min(),
+            "q_mean": qs.mean(),
+            "q_max": qs.max(),
+        }
+
     @classmethod
     def create(
         cls,

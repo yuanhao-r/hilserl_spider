@@ -372,7 +372,6 @@ class RAMEnv(BaseRAMRobotEnv):
         
         time.sleep(0.5)
 
-
     def regrasp(self):
         # use compliance mode for coupled reset
         self._update_currpos()
@@ -601,6 +600,9 @@ class RAMEnv(BaseRAMRobotEnv):
             if self.force_sensor is not None:
                 self.force_sensor.reset_baseline()
             self._update_currpos()
+            self.cmd_pose = self.currpos.copy()
+            print("update cmd_pose: ", self.cmd_pose)
+
             # if hasattr(self, "_ensure_safety_box_contains_key_poses"):
             #     self._ensure_safety_box_contains_key_poses(reason="ram_reset")
             # # 复位后把控制目标与当前位置强制对齐，避免下一拍沿旧目标跳变
