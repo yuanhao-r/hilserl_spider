@@ -549,7 +549,7 @@ class TrainConfig(DefaultTrainingConfig):
             env = SpacemouseIntervention(
                 env,
                 gripper_control=False,
-                deadband=0.002,
+                deadband=0.08,
                 expert_linear_scale=getattr(env_config, "SPACEMOUSE_LINEAR_SCALE", 1.0),
                 expert_angular_scale=getattr(env_config, "SPACEMOUSE_ANGULAR_SCALE", 1.0),
             )

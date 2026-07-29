@@ -401,7 +401,7 @@ class SpacemouseIntervention(gym.ActionWrapper):
         if self.require_button and not button_pressed:
             intervened = False
 
-        print('Space Mouse intervene: ', expert_a)
+        # print('Space Mouse intervene: ', expert_a)
 
         if intervened:
             self._post_reset_hold_remaining = 0

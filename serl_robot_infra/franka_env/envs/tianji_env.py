@@ -185,10 +185,24 @@ def _inject_tianji_paths() -> Path:
     """Ensure test_teleop paths are importable for Tianji SDK and IK modules."""
     workspace_root = Path(__file__).resolve().parents[4]
     teleop_root = workspace_root / "test_teleop"
+    tlop_root = workspace_root / "tlop_arm_driver"
     python_dir = teleop_root / "python"
     demo_dir = teleop_root / "demo"
+    python_version = f"python{sys.version_info.major}.{sys.version_info.minor}"
 
-    for path in (python_dir, demo_dir):
+    candidate_paths = (
+        python_dir,
+        demo_dir,
+        tlop_root / "install/tlop_arm_driver/lib" / python_version / "site-packages",
+        tlop_root / "install/tlop_arm_driver/lib/python3.10/site-packages",
+        workspace_root / "install/spr_arm_interfaces/lib" / python_version / "site-packages",
+        workspace_root / "install/spr_arm_interfaces/lib/python3.10/site-packages",
+        workspace_root / "install/spr_arm_interfaces/lib/python3.13/site-packages",
+        Path("/opt/ros/humble/lib") / python_version / "site-packages",
+        Path("/opt/ros/humble/local/lib") / python_version / "dist-packages",
+    )
+
+    for path in candidate_paths:
         if path.exists():
             path_str = str(path)
             if path_str not in sys.path:
@@ -200,6 +214,13 @@ def _inject_tianji_paths() -> Path:
 _TELEOP_ROOT = _inject_tianji_paths()
 _MARVIN_IMPORT_ERROR = None
 _DUAL_IK_IMPORT_ERROR = None
+_TLOP_IMPORT_ERROR = None
+
+try:
+    import tlop_arm_driver as tlop
+except Exception as exc:  # pragma: no cover - runtime dependency check
+    _TLOP_IMPORT_ERROR = exc
+    tlop = None
 
 try:
     from marvin_arm_controller import MarvinArmController
@@ -238,6 +259,13 @@ class DefaultTianjiEnvConfig:
     REWARD_THRESHOLD: np.ndarray = np.zeros((6,))
 
     CONTROL_FREQ: float = 20.0
+    TLOP_TRANSPORT: str = "udp"
+    TLOP_UDP_HOST: str = "10.10.12.2"
+    TLOP_UDP_PORT: int = 17030
+    TLOP_WAIT_READY_TIMEOUT: float = 3.0
+    TLOP_SERVICE_TIMEOUT: float = 0.05
+    TLOP_POSE_TIMEOUT: float = 1.0
+    TLOP_GRIPPER_TIMEOUT: float = 15.0
     IK_SERVER_URL: str | None = None # "http://127.0.0.1:8765"
     IK_SERVER_TIMEOUT: float = 1.0
     ACTION_SCALE = np.zeros((3,))
@@ -505,6 +533,7 @@ class TianjiEnv(gym.Env):
         self.lastsent = time.time()
 
         self.controller = None
+        self.tlop_api = None
         self.full_ik_solver = None
         self.ik_client = None
         self._warned_gripper_unavailable = False
@@ -562,6 +591,12 @@ class TianjiEnv(gym.Env):
                     "Failed to import Tianji dependencies. Make sure test_teleop/demo and "
                     "test_teleop/python are available and SDK dependencies are installed."
                 ) from _MARVIN_IMPORT_ERROR
+            if _TLOP_IMPORT_ERROR is not None:
+                raise ImportError(
+                    "Failed to import tlop_arm_driver. Run `source install/setup.bash` "
+                    "in /home/ubuntu/teleop_tianji/tlop_arm_driver first, or ensure its "
+                    "install site-packages path is available."
+                ) from _TLOP_IMPORT_ERROR
 
             self.controller = MarvinArmController(
                 robot_ip=self.robot_ip,
@@ -569,12 +604,8 @@ class TianjiEnv(gym.Env):
                 urdf_path=config.MARVIN_URDF_PATH,
             )
             self.controller.init_kinematics()
-            connected = self.controller.init_robot_connection()
-            if not connected:
-                raise RuntimeError(
-                    f"Failed to connect Tianji robot at {self.robot_ip}."
-                )
-            self._has_right_gripper_api = hasattr(self.controller, "right_gripper")
+            self._init_tlop_backend()
+            self._has_right_gripper_api = True
 
             ik_server_url = os.environ.get(
                 "HILSERL_TIANJI_IK_URL",
@@ -632,6 +663,7 @@ class TianjiEnv(gym.Env):
         if self.save_video:
             print("Saving videos!")
             self.recording_frames = []
+        self.cap = OrderedDict()
 
         self.xyz_bounding_box = gym.spaces.Box(
             np.array(config.ABS_POSE_LIMIT_LOW[:3], dtype=np.float64),
@@ -706,6 +738,53 @@ class TianjiEnv(gym.Env):
 
         print("Initialized Tianji MARVIN Env.")
 
+    def _init_tlop_backend(self):
+        kwargs = {
+            "service_timeout": float(getattr(self.config, "TLOP_SERVICE_TIMEOUT", 0.05)),
+            "pose_timeout": float(getattr(self.config, "TLOP_POSE_TIMEOUT", 1.0)),
+            "gripper_timeout": float(getattr(self.config, "TLOP_GRIPPER_TIMEOUT", 15.0)),
+        }
+        transport = str(getattr(self.config, "TLOP_TRANSPORT", "udp"))
+        if transport == "udp":
+            kwargs.update(
+                {
+                    "udp_host": str(getattr(self.config, "TLOP_UDP_HOST", "10.10.12.2")),
+                    "udp_port": int(getattr(self.config, "TLOP_UDP_PORT", 17030)),
+                }
+            )
+        self.tlop_api = tlop.start(transport=transport, **kwargs)
+        wait_timeout = float(getattr(self.config, "TLOP_WAIT_READY_TIMEOUT", 3.0))
+        if not self.tlop_api.wait_ready(wait_timeout):
+            raise RuntimeError(f"tlop_arm_driver is not ready: {self.tlop_api.last_error}")
+
+    def _get_lr_joints_rad(self) -> tuple[np.ndarray, np.ndarray]:
+        left, right = self.tlop_api.get_psn(
+            "LR", timeout=float(getattr(self.config, "TLOP_POSE_TIMEOUT", 1.0))
+        )
+        return np.asarray(left, dtype=np.float64), np.asarray(right, dtype=np.float64)
+
+    def _get_lr_joints_deg(self) -> tuple[np.ndarray, np.ndarray]:
+        left_rad, right_rad = self._get_lr_joints_rad()
+        return np.rad2deg(left_rad), np.rad2deg(right_rad)
+
+    def _send_dual_joints_rad(self, left_rad: np.ndarray, right_rad: np.ndarray) -> bool:
+        ok = self.tlop_api.step(
+            np.asarray(left_rad, dtype=np.float64).reshape(7).tolist(),
+            np.asarray(right_rad, dtype=np.float64).reshape(7).tolist(),
+            timeout=float(getattr(self.config, "TLOP_SERVICE_TIMEOUT", 0.05)),
+            check_ready=False,
+            validate=True,
+        )
+        if not ok:
+            print(f"Tianji tlop step failed: {self.tlop_api.last_error}")
+        return bool(ok)
+
+    def _send_dual_joints_deg(self, left_deg: np.ndarray, right_deg: np.ndarray) -> bool:
+        return self._send_dual_joints_rad(
+            np.deg2rad(np.asarray(left_deg, dtype=np.float64).reshape(7)),
+            np.deg2rad(np.asarray(right_deg, dtype=np.float64).reshape(7)),
+        )
+
     def _joints_deg_to_matrix(self, joints_deg):
         """利用正运动学(FK)，把关节角度转化为6D笛卡尔位姿用于计算Reward"""
         joints_rad = np.array(joints_deg, dtype=np.float64) * self.controller.DEG_TO_RAD
@@ -769,15 +848,9 @@ class TianjiEnv(gym.Env):
         if not self.debug_twitch or self.fake_env or self.controller is None:
             return
         if ql_deg is None:
-            ql_deg = (
-                np.array(self.controller.get_joint_pos_rad(arm_id=1), dtype=np.float64)
-                / self.controller.DEG_TO_RAD
-            )
+            ql_deg, _ = self._get_lr_joints_deg()
         if qr_deg is None:
-            qr_deg = (
-                np.array(self.controller.get_joint_pos_rad(arm_id=2), dtype=np.float64)
-                / self.controller.DEG_TO_RAD
-            )
+            _, qr_deg = self._get_lr_joints_deg()
         self._debug_joint_ring.append(
             {
                 "t": time.time(),
@@ -828,6 +901,7 @@ class TianjiEnv(gym.Env):
         if (
             self.fake_env
             or self.controller is None
+            or self.tlop_api is not None
             or not self.reset_apply_custom_impedance
             or not hasattr(self.controller, "set_cartesian_impedance_profile")
         ):
@@ -877,6 +951,9 @@ class TianjiEnv(gym.Env):
         if self._reset_motion_mode_entered:
             return
         self._reset_motion_mode_entered = True
+        if self.tlop_api is not None:
+            self._mark_ik_seed_refresh(f"enter_reset_motion_mode {reason}")
+            return
         if self.reset_use_position_mode and hasattr(self.controller, "enter_position_mode"):
             ok = self.controller.enter_position_mode(
                 vel_ratio=self.reset_position_mode_vel_ratio,
@@ -896,6 +973,9 @@ class TianjiEnv(gym.Env):
         if not self._reset_motion_mode_entered:
             return
         self._reset_motion_mode_entered = False
+        if self.tlop_api is not None:
+            self._mark_ik_seed_refresh(f"restore_control_mode_after_reset {reason}")
+            return
         if self.reset_restore_impedance_on_exit and hasattr(
             self.controller, "enter_cartesian_impedance_mode"
         ):
@@ -921,25 +1001,14 @@ class TianjiEnv(gym.Env):
             return
         hold_hz = max(1.0, float(self.reset_hold_hz))
         period = 1.0 / hold_hz
-        target_ql = (
-            np.array(self.controller.get_joint_pos_rad(arm_id=1), dtype=np.float64)
-            / self.controller.DEG_TO_RAD
-        )
-        target_qr = (
-            np.array(self.controller.get_joint_pos_rad(arm_id=2), dtype=np.float64)
-            / self.controller.DEG_TO_RAD
-        )
+        target_ql, target_qr = self._get_lr_joints_deg()
         end_t = time.perf_counter() + dt
         next_tick = time.perf_counter()
         while True:
             now = time.perf_counter()
             if now >= end_t:
                 break
-            self.controller.step(
-                np.array(target_ql, dtype=np.float64),
-                np.array(target_qr, dtype=np.float64),
-                verbose=False,
-            )
+            self._send_dual_joints_deg(target_ql, target_qr)
             next_tick += period
             sleep_dt = min(max(0.0, next_tick - time.perf_counter()), max(0.0, end_t - time.perf_counter()))
             if sleep_dt > 0:
@@ -973,14 +1042,7 @@ class TianjiEnv(gym.Env):
             return
         hold_hz = max(1.0, float(self.reset_handoff_hz))
         period = 1.0 / hold_hz
-        target_ql = (
-            np.array(self.controller.get_joint_pos_rad(arm_id=1), dtype=np.float64)
-            / self.controller.DEG_TO_RAD
-        )
-        target_qr = (
-            np.array(self.controller.get_joint_pos_rad(arm_id=2), dtype=np.float64)
-            / self.controller.DEG_TO_RAD
-        )
+        target_ql, target_qr = self._get_lr_joints_deg()
         self._handoff_hold_stop_evt = threading.Event()
         stop_evt = self._handoff_hold_stop_evt
 
@@ -989,11 +1051,7 @@ class TianjiEnv(gym.Env):
             next_tick = time.perf_counter()
             while (not stop_evt.is_set()) and (time.perf_counter() < end_t):
                 try:
-                    self.controller.step(
-                        np.array(target_ql, dtype=np.float64),
-                        np.array(target_qr, dtype=np.float64),
-                        verbose=False,
-                    )
+                    self._send_dual_joints_deg(target_ql, target_qr)
                 except Exception:
                     break
                 next_tick += period
@@ -1029,14 +1087,7 @@ class TianjiEnv(gym.Env):
     def _capture_post_reset_hold_target(self):
         if self.fake_env or self.controller is None:
             return
-        self._post_reset_hold_target_ql = (
-            np.array(self.controller.get_joint_pos_rad(arm_id=1), dtype=np.float64)
-            / self.controller.DEG_TO_RAD
-        )
-        self._post_reset_hold_target_qr = (
-            np.array(self.controller.get_joint_pos_rad(arm_id=2), dtype=np.float64)
-            / self.controller.DEG_TO_RAD
-        )
+        self._post_reset_hold_target_ql, self._post_reset_hold_target_qr = self._get_lr_joints_deg()
 
     def _hold_post_reset_target_once(self):
         if self.fake_env or self.controller is None:
@@ -1048,11 +1099,7 @@ class TianjiEnv(gym.Env):
             self._capture_post_reset_hold_target()
         target_ql = np.array(self._post_reset_hold_target_ql, dtype=np.float64)
         target_qr = np.array(self._post_reset_hold_target_qr, dtype=np.float64)
-        self.controller.step(
-            np.array(target_ql, dtype=np.float64),
-            np.array(target_qr, dtype=np.float64),
-            verbose=False,
-        )
+        self._send_dual_joints_deg(target_ql, target_qr)
         self._update_currpos()
         self.cmd_pose = self.currpos.copy()
         self.nextpos = self.currpos.copy()
@@ -1073,20 +1120,9 @@ class TianjiEnv(gym.Env):
         end_t = time.perf_counter() + timeout
         next_tick = time.perf_counter()
         while True:
-            ql_now = (
-                np.array(self.controller.get_joint_pos_rad(arm_id=1), dtype=np.float64)
-                / self.controller.DEG_TO_RAD
-            )
-            qr_now = (
-                np.array(self.controller.get_joint_pos_rad(arm_id=2), dtype=np.float64)
-                / self.controller.DEG_TO_RAD
-            )
+            ql_now, qr_now = self._get_lr_joints_deg()
             max_err = float(np.max(np.abs(qr_now - target)))
-            self.controller.step(
-                np.array(ql_now, dtype=np.float64),
-                np.array(target, dtype=np.float64),
-                verbose=False,
-            )
+            self._send_dual_joints_deg(ql_now, target)
             if max_err <= tol_deg or time.perf_counter() >= end_t:
                 break
             next_tick += period
@@ -1372,6 +1408,11 @@ class TianjiEnv(gym.Env):
         display_images = {}
         full_res_images = {}
 
+        if self.fake_env or not hasattr(self, "cap") or not self.cap:
+            for key, space in self.observation_space["images"].spaces.items():
+                images[key] = np.zeros(space.shape, dtype=np.uint8)
+            return images
+
         for key, cap in self.cap.items():
             try:
                 rgb = cap.read()
@@ -1555,9 +1596,8 @@ class TianjiEnv(gym.Env):
 
         rate_hz = max(1.0, float(self.interpolate_hz))
         
-        # 获取当前的左右臂关节角度
-        current_ql = self.controller.get_joint_pos_rad(arm_id=1) / self.controller.DEG_TO_RAD
-        current_qr = self.controller.get_joint_pos_rad(arm_id=2) / self.controller.DEG_TO_RAD
+        # 获取当前的左右臂关节角度（历史 reset 路径使用角度制）
+        current_ql, current_qr = self._get_lr_joints_deg()
         # self._debug_log(
         #     f"interpolate_joint_move start steps~{steps_guess} timeout={timeout:.2f}s "
         #     f"target_qr[:3]={np.round(target[:3], 3).tolist()}"
@@ -1597,11 +1637,7 @@ class TianjiEnv(gym.Env):
         next_tick = time.perf_counter()
         for pr in path_r:
             self._debug_append_joint_sample(tag="interp_cmd", target_qr=pr)
-            self.controller.step(
-                np.array(current_ql, dtype=np.float64),
-                np.array(pr, dtype=np.float64),
-                verbose=False
-            )
+            self._send_dual_joints_deg(current_ql, pr)
             next_tick += period
             sleep_dt = max(0.0, next_tick - time.perf_counter())
             if sleep_dt > 0:
@@ -1630,14 +1666,7 @@ class TianjiEnv(gym.Env):
         if waypoints_deg is None or len(waypoints_deg) == 0:
             return
 
-        current_ql = (
-            np.array(self.controller.get_joint_pos_rad(arm_id=1), dtype=np.float64)
-            / self.controller.DEG_TO_RAD
-        )
-        current_qr = (
-            np.array(self.controller.get_joint_pos_rad(arm_id=2), dtype=np.float64)
-            / self.controller.DEG_TO_RAD
-        )
+        current_ql, current_qr = self._get_lr_joints_deg()
 
         targets: list[np.ndarray] = []
         prev = current_qr.copy()
@@ -1682,11 +1711,7 @@ class TianjiEnv(gym.Env):
         period = 1.0 / rate_hz
         next_tick = time.perf_counter()
         for pr in path_r:
-            self.controller.step(
-                np.array(current_ql, dtype=np.float64),
-                np.array(pr, dtype=np.float64),
-                verbose=False,
-            )
+            self._send_dual_joints_deg(current_ql, pr)
             next_tick += period
             sleep_dt = max(0.0, next_tick - time.perf_counter())
             if sleep_dt > 0:
@@ -1972,13 +1997,8 @@ class TianjiEnv(gym.Env):
             print(f"Invalid joint command shape: {arr.shape}")
             return -1
 
-        left_rad = self.controller.get_joint_pos_rad(arm_id=1)
-        left_deg = np.array(left_rad) / self.controller.DEG_TO_RAD
-        ok = self.controller.step(
-            np.array(left_deg, dtype=np.float64),
-            np.array(arr, dtype=np.float64),
-            verbose=False,
-        )
+        left_deg, _ = self._get_lr_joints_deg()
+        ok = self._send_dual_joints_deg(left_deg, arr)
         self._update_currpos()
         self._mark_ik_seed_refresh("_send_joint_command")
         return 0 if ok else -1
@@ -1988,25 +2008,16 @@ class TianjiEnv(gym.Env):
         if self.fake_env:
             return
 
-        if not getattr(self, "_has_right_gripper_api", False):
-            if not self._warned_gripper_unavailable:
-                print(
-                    "Tianji gripper API unavailable or disabled in MarvinArmController. "
-                    "Gripper commands will be ignored."
-                )
-                self._warned_gripper_unavailable = True
-            self.curr_gripper_pos = 0.0 if cmd else 1.0
-            return
-
         try:
-            if cmd:
-                self.controller.right_gripper(False)
-                self.curr_gripper_pos = 0.0
-                
-            else:
-                self.controller.right_gripper(True)
-                self.curr_gripper_pos = 1.0
-                
+            ok = self.tlop_api.set_gripper(
+                "R",
+                not bool(cmd),
+                timeout=float(getattr(self.config, "TLOP_GRIPPER_TIMEOUT", 15.0)),
+                wait=True,
+            )
+            if not ok:
+                print(f"Tianji gripper failed: {self.tlop_api.last_error}")
+            self.curr_gripper_pos = 0.0 if cmd else 1.0
         except Exception as e:
             print(f"ERROR when control Tianji gripper: {e}")
 
@@ -2106,8 +2117,7 @@ class TianjiEnv(gym.Env):
         self.right_target_pose = target_tf
 
         try:
-            current_ql = self.controller.get_joint_pos_rad(arm_id=1)
-            current_qr = self.controller.get_joint_pos_rad(arm_id=2)
+            current_ql, current_qr = self._get_lr_joints_rad()
             ql_target, qr_target = self._compute_full_body_ik(
                 current_ql=current_ql,
                 current_qr=current_qr,
@@ -2117,7 +2127,7 @@ class TianjiEnv(gym.Env):
                 return None
             self._ik_need_seed_refresh = True
 
-            joint_cmd_right = np.array(qr_target / self.controller.DEG_TO_RAD, dtype=np.float64)
+            joint_cmd_right = np.rad2deg(np.asarray(qr_target, dtype=np.float64))
 
             return joint_cmd_right
         except Exception as e:
@@ -2128,8 +2138,7 @@ class TianjiEnv(gym.Env):
             return 0
 
         try:
-            current_ql = self.controller.get_joint_pos_rad(arm_id=1)
-            current_qr = self.controller.get_joint_pos_rad(arm_id=2)
+            current_ql, current_qr = self._get_lr_joints_rad()
             force_seed_from_current = bool(self._ik_need_seed_refresh)
             ql_target, qr_target = self._compute_full_body_ik(
                 current_ql=current_ql,
@@ -2140,16 +2149,16 @@ class TianjiEnv(gym.Env):
                 return -1
             self._ik_need_seed_refresh = False
 
-            joint_cmd_left = np.array(ql_target / self.controller.DEG_TO_RAD, dtype=np.float64)
-            joint_cmd_right = np.array(qr_target / self.controller.DEG_TO_RAD, dtype=np.float64)
+            joint_cmd_left = np.rad2deg(np.asarray(ql_target, dtype=np.float64))
+            joint_cmd_right = np.rad2deg(np.asarray(qr_target, dtype=np.float64))
             self._debug_append_joint_sample(
                 tag="ik_cmd",
                 target_qr=joint_cmd_right,
-                ql_deg=np.array(current_ql / self.controller.DEG_TO_RAD, dtype=np.float64),
-                qr_deg=np.array(current_qr / self.controller.DEG_TO_RAD, dtype=np.float64),
+                ql_deg=np.rad2deg(np.asarray(current_ql, dtype=np.float64)),
+                qr_deg=np.rad2deg(np.asarray(current_qr, dtype=np.float64)),
             )
 
-            ok = self.controller.step(joint_cmd_left, joint_cmd_right, verbose=False)
+            ok = self._send_dual_joints_rad(ql_target, qr_target)
             self._debug_append_joint_sample(tag="ik_fb", target_qr=joint_cmd_right)
             return 0 if ok else -1
         except Exception as e:
@@ -2160,8 +2169,7 @@ class TianjiEnv(gym.Env):
         if self.fake_env:
             return
 
-        current_ql = self.controller.get_joint_pos_rad(arm_id=1)
-        current_qr = self.controller.get_joint_pos_rad(arm_id=2)
+        current_ql, current_qr = self._get_lr_joints_rad()
 
         left_fk = self.controller.compute_fk(current_ql)
         right_fk = self.controller.compute_fk(current_qr)
@@ -2210,7 +2218,10 @@ class TianjiEnv(gym.Env):
     def _get_obs(self) -> dict:
         images = self.get_im()
         # right arm eef force
-        eef_force = self.controller.get_eef_force(arm_id=2)
+        if self.controller is not None and getattr(self.controller, "robot", None) is not None:
+            eef_force = self.controller.get_eef_force(arm_id=2)
+        else:
+            eef_force = np.zeros(6, dtype=np.float64)
         state_observation = {
             "tcp_pose": self.currpos,
             "tcp_vel": self.currvel,
