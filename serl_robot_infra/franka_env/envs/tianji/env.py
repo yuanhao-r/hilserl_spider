@@ -198,19 +198,19 @@ class TianjiEnv(gym.Env):
         self.terminate = False
         self.last_gripper_act = time.time()
         self._last_step_t = 0.0
-
-        self.backend = TianjiTlopBackend(self.config.backend)
-        self.backend.connect()
-        self.kinematics = TianjiKinematics(self.config.kinematics)
-        self._update_currpos()
-        # if self.reset_joints is None:
+        if not self.fake_env:
+            self.backend = TianjiTlopBackend(self.config.backend)
+            self.backend.connect()
+            self.kinematics = TianjiKinematics(self.config.kinematics)
+            self._update_currpos()
+          # if self.reset_joints is None:
             # raise ValueError("TianjiEnv requires RESET_JOINTS to compute reset pose.")
-        self.resetpos = self.kinematics.pose_from_right_joints_deg(self.reset_joints)
-        # self.resetpos = self.kinematics.
-        print(
-            "[TianjiEnv] reset pose from RESET_JOINTS "
-            f"{np.round(self.resetpos, 4).tolist()}"
-        )
+            self.resetpos = self.kinematics.pose_from_right_joints_deg(self.reset_joints)
+            # self.resetpos = self.kinematics.
+            print(
+                "[TianjiEnv] reset pose from RESET_JOINTS "
+                f"{np.round(self.resetpos, 4).tolist()}"
+            )
         self.cmd_pose = self.currpos.copy()
         self.nextpos = self.currpos.copy()
 
@@ -284,7 +284,6 @@ class TianjiEnv(gym.Env):
             delta_rot = Rotation.from_euler("xyz", action[3:6] * float(self.action_scale[1]))
             pose[3:] = (delta_rot * Rotation.from_euler("xyz", self.cmd_pose[3:])).as_euler("xyz")
         return pose
-        # return self.clip_safety_box(pose)
 
     def step(self, action: np.ndarray) -> tuple:
         action = np.clip(np.asarray(action, dtype=np.float64).reshape(7), -1.0, 1.0)
@@ -292,8 +291,9 @@ class TianjiEnv(gym.Env):
 
         self.nextpos = self._pose_after_action(action)
         # print("nextpos:", self.nextpos, flush=True)
-        gripper_action = action[6] * float(self.action_scale[2] if self.action_scale.shape[0] > 2 else 1.0)
-        self._send_gripper_command(gripper_action)
+        # TODO 不要高频开关 后续需要重构这部分代码。 当前任务不需要开
+        # gripper_action = action[6] * float(self.action_scale[2] if self.action_scale.shape[0] > 2 else 1.0)
+        # self._send_gripper_command(gripper_action)
 
         ret, ik_error = self._send_pos_command(self.nextpos)
         if ret == 0:
@@ -347,13 +347,13 @@ class TianjiEnv(gym.Env):
             force_seed_from_current=True,
             reset_stats=True,
         )
-        while ret != 0 and ik_error > 0.001:
+        while ret != 0 and ik_error > 0.0001:
             ret, ik_error = self._send_pos_command(
                 target_pose,
                 force_seed_from_current=False,
                 reset_stats=True,
             )
-        time.sleep(float(self.config.random_reset_wait_sec))
+        time.sleep(float(self.config.reset_wait_sec))
 
     def _move_to_right_joints_deg(self, right_joints_deg: np.ndarray, hold_sec: float = 0.0) -> None:
         right_rad = np.deg2rad(np.asarray(right_joints_deg, dtype=np.float64).reshape(7))
@@ -448,13 +448,13 @@ class TianjiEnv(gym.Env):
         if self.fake_env or mode != "binary":
             return
         now = time.time()
-        if pos <= -0.5 and self.curr_gripper_pos > 0.85 and now - self.last_gripper_act > self.gripper_sleep:
+        if pos < 0.5 and now - self.last_gripper_act > self.gripper_sleep:
             if self.backend.set_gripper_closed(True):
                 self.curr_gripper_pos = 0.0
             else:
                 print(f"[TianjiEnv] gripper close failed: {self.backend.last_error}")
             self.last_gripper_act = now
-        elif pos >= 0.5 and self.curr_gripper_pos < 0.85 and now - self.last_gripper_act > self.gripper_sleep:
+        elif pos >= 0.5  and now - self.last_gripper_act > self.gripper_sleep:
             if self.backend.set_gripper_closed(False):
                 self.curr_gripper_pos = 1.0
             else:

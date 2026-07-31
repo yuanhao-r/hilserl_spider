@@ -4,11 +4,12 @@ openpi_test/data_raw/
 openpi_test/data_transformed/
 openpi_test/openpi/checkpoints/
 openpi_test/openpi/model/
-examples/experiments/ram_insertion/demo_data/
-examples/experiments/ram_insertion/first_run*/
+examples/experiments/*/0731train/
+examples/experiments/*/demo_data/
+examples/experiments/*/first_run*/
 examples/utils/Log/*
-examples/experiments/ram_insertion/cyclonedds.log
-examples/experiments/ram_insertion/wandb
+examples/experiments/*/cyclonedds.log
+examples/experiments/*/wandb
 lerobot/
 *.tar
 *.gz

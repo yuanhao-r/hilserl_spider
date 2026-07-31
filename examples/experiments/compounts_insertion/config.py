@@ -14,6 +14,8 @@ from franka_env.envs.wrappers import (
 from serl_launcher.wrappers.chunking import ChunkingWrapper
 from serl_launcher.wrappers.serl_obs_wrappers import SERLObsWrapper
 
+from experiments.compounts_insertion.wrapper import COMPONENTEnv
+
 
 _WORKSPACE_ROOT = Path(__file__).resolve().parents[4]
 _TELEOP_ROOT = _WORKSPACE_ROOT / "test_teleop"
@@ -46,18 +48,21 @@ class EnvConfig(DefaultTianjiEnvConfig):
     # Fill this with the fixed reset/right-arm standby joint angles you want.
     # Unit: degrees, same as ram_insertion's Tianji config.
     RESET_JOINTS = np.array(
-        [86.02954, 76.22053, -80.41872, -119.65581, 109.78898, 6.75465, -25.18097],
+        [100.52533056, 75.83623540, -85.95455547, -111.59229686, 104.65297582, 2.33508949, -34.37380078],
         dtype=np.float64,
     )
-    RESET_POSE = np.array(
-        [ 0.81554249, -0.25109333,0.94290184 , 1.69872075, -1.4762164,   1.55535381],
-        dtype=np.float64,
-    )
+    # TOP_JOINTS = np.array([94.82210867, 78.68538263, -85.90459355, -109.36515261, 101.50909910, 2.13432508, -29.02953694])
+    TOP_JOINTS = np.array( [100.52533056, 75.83623540, -85.95455547, -111.59229686, 104.65297582, 2.33508949, -34.37380078], dtype=np.float64)
+    TARGET_JOINTS = np.array([95.03123827, 82.85038473, -79.78311246, -110.53914313, 103.97986500, 10.32664752, -31.54052448], dtype=np.float64)
+    # TARGET_JOINTS = np.array([91.38258573, 79.93082098, -86.75887362, -105.77373856, 99.65964863, 2.11324024, -19.66660443])
+
+
     CONTROL_HZ = 10
     CONTROL_TIME = 1.0 / CONTROL_HZ
     ACTION_SCALE = np.array([0.005, 0.005, 1.0], dtype=np.float64)
     SPACEMOUSE_LINEAR_SCALE = 1.0
     SPACEMOUSE_ANGULAR_SCALE = 1.0
+    SPACEMOUSE_DEADBAND = 0.02
 
     ABS_POSE_LIMIT_LOW = np.array(
         [0.7505, -0.1617, 0.5230, -np.pi, -np.pi, -np.pi],
@@ -71,10 +76,10 @@ class EnvConfig(DefaultTianjiEnvConfig):
     RANDOM_RESET = True
     RANDOM_XY_RANGE = 0.02
     RANDOM_RZ_RANGE = 0.0
-    RANDOM_DX_MIN = -0.015
-    RANDOM_DX_MAX = 0.015
-    RANDOM_DY_MIN = -0.015
-    RANDOM_DY_MAX = 0.015
+    RANDOM_DX_MIN = -0.015*0
+    RANDOM_DX_MAX = 0.015*0
+    RANDOM_DY_MIN = -0.015*0
+    RANDOM_DY_MAX = 0.015*0
     RANDOM_DZ_MIN = 0.0
     RANDOM_DZ_MAX = 0.0
 
@@ -83,6 +88,8 @@ class EnvConfig(DefaultTianjiEnvConfig):
     RESET_HOLD_HZ = 40.0
     GRIPPER_SLEEP = 0.6
     MAX_EPISODE_LENGTH = 200
+
+
 
 
 class TrainConfig(DefaultTrainingConfig):
@@ -109,7 +116,7 @@ class TrainConfig(DefaultTrainingConfig):
         self.image_keys = list(env_config.realsense_cameras.keys())
         self.classifier_keys = list(env_config.realsense_cameras.keys())
 
-        env = TianjiEnv(
+        env = COMPONENTEnv(
             fake_env=fake_env,
             save_video=save_video,
             config=env_config,
@@ -125,8 +132,7 @@ class TrainConfig(DefaultTrainingConfig):
             env = SpacemouseIntervention(
                 env,
                 gripper_control=False,
-                # deadband=float(os.environ.get("HILSERL_SPACEMOUSE_DEADBAND", "0.08")),
-                deadband = 0.08,
+                deadband=getattr(env_config, "SPACEMOUSE_DEADBAND", 0.02),
                 expert_linear_scale=getattr(env_config, "SPACEMOUSE_LINEAR_SCALE", 1.0),
                 expert_angular_scale=getattr(env_config, "SPACEMOUSE_ANGULAR_SCALE", 1.0),
             )
