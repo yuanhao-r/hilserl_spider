@@ -320,12 +320,10 @@ class DefaultTianjiEnvConfig:
     RANDOM_RESET = False
     RANDOM_XY_RANGE = 0.0
     RANDOM_RZ_RANGE = 0.0
-    ABS_POSE_LIMIT_HIGH = np.array([0.85, 0.35, 1.50, np.pi, np.pi, np.pi])
-    ABS_POSE_LIMIT_LOW = np.array([-0.20, -0.55, 0.40, -np.pi, -np.pi, -np.pi])
+    ABS_POSE_LIMIT_HIGH = np.array([2.85, 2.35, 2.50, np.pi, np.pi, np.pi])
+    ABS_POSE_LIMIT_LOW = np.array([-2.20, -2.55, 2.40, -np.pi, -np.pi, -np.pi])
     # 若配置的安全框与真实关键位姿(当前/RESET/TARGET/GRASP)不一致，自动扩框避免“被边界吸住”
     AUTO_EXPAND_ABS_POSE_LIMIT: bool = True
-    ABS_POSE_LIMIT_EXPAND_MARGIN_XYZ = np.array([0.1, 0.1, 0.1], dtype=np.float64)
-
     COMPLIANCE_PARAM: Dict[str, float] = {}
     RESET_PARAM: Dict[str, float] = {}
     PRECISION_PARAM: Dict[str, float] = {}
@@ -575,15 +573,6 @@ class TianjiEnv(gym.Env):
         self.auto_expand_abs_pose_limit = bool(
             getattr(config, "AUTO_EXPAND_ABS_POSE_LIMIT", True)
         )
-        margin_xyz = np.array(
-            getattr(config, "ABS_POSE_LIMIT_EXPAND_MARGIN_XYZ", 0.02),
-            dtype=np.float64,
-        ).reshape(-1)
-        if margin_xyz.size == 1:
-            margin_xyz = np.full(3, float(margin_xyz.item()), dtype=np.float64)
-        if margin_xyz.size != 3:
-            margin_xyz = np.array([0.02, 0.02, 0.02], dtype=np.float64)
-        self.abs_pose_limit_expand_margin_xyz = np.abs(margin_xyz)
 
         if not self.fake_env:
             if _MARVIN_IMPORT_ERROR is not None:
@@ -743,6 +732,7 @@ class TianjiEnv(gym.Env):
             "service_timeout": float(getattr(self.config, "TLOP_SERVICE_TIMEOUT", 0.05)),
             "pose_timeout": float(getattr(self.config, "TLOP_POSE_TIMEOUT", 1.0)),
             "gripper_timeout": float(getattr(self.config, "TLOP_GRIPPER_TIMEOUT", 15.0)),
+            "trace_enabled": False,
         }
         transport = str(getattr(self.config, "TLOP_TRANSPORT", "udp"))
         if transport == "udp":
@@ -750,6 +740,7 @@ class TianjiEnv(gym.Env):
                 {
                     "udp_host": str(getattr(self.config, "TLOP_UDP_HOST", "10.10.12.2")),
                     "udp_port": int(getattr(self.config, "TLOP_UDP_PORT", 17030)),
+                    "udp_step_ack": False,
                 }
             )
         self.tlop_api = tlop.start(transport=transport, **kwargs)
@@ -1143,49 +1134,45 @@ class TianjiEnv(gym.Env):
             return
 
         stacked = np.vstack(poses)
-        need_low_xyz = (
-            np.min(stacked[:, :3], axis=0) - self.abs_pose_limit_expand_margin_xyz
-        )
-        need_high_xyz = (
-            np.max(stacked[:, :3], axis=0) + self.abs_pose_limit_expand_margin_xyz
-        )
+        # need_low_xyz = np.min(stacked[:, :3], axis=0)
+        # need_high_xyz = np.max(stacked[:, :3], axis=0)
 
-        cur_low = np.array(self.xyz_bounding_box.low, dtype=np.float64)
-        cur_high = np.array(self.xyz_bounding_box.high, dtype=np.float64)
+        # cur_low = np.array(self.xyz_bounding_box.low, dtype=np.float64)
+        # cur_high = np.array(self.xyz_bounding_box.high, dtype=np.float64)
 
-        if self.auto_expand_abs_pose_limit:
-            new_low = np.minimum(cur_low, need_low_xyz)
-            new_high = np.maximum(cur_high, need_high_xyz)
-            if np.max(np.abs(new_low - cur_low)) > 1e-9 or np.max(
-                np.abs(new_high - cur_high)
-            ) > 1e-9:
-                self.xyz_bounding_box = gym.spaces.Box(
-                    new_low.astype(np.float64),
-                    new_high.astype(np.float64),
-                    dtype=np.float64,
-                )
-                print(
-                    "[SAFETY_BOX] auto-expand"
-                    f"{'' if reason == '' else f'({reason})'} "
-                    f"xyz_bounding_box.low={np.round(cur_low, 4).tolist()} "
-                    f"xyz_bounding_box.high={np.round(cur_high, 4).tolist()} "
-                    f"xyz_low={np.round(new_low, 4).tolist()} "
-                    f"xyz_high={np.round(new_high, 4).tolist()}"
-                )
-        else:
-            bad_low = need_low_xyz < cur_low - 1e-9
-            bad_high = need_high_xyz > cur_high + 1e-9
-            if np.any(bad_low) or np.any(bad_high):
-                names = np.array(["x", "y", "z"])
-                clipped_axes = names[np.logical_or(bad_low, bad_high)].tolist()
-                print(
-                    "[SAFETY_BOX] warning key pose outside configured xyz bounds "
-                    f"axes={clipped_axes} "
-                    f"need_low={np.round(need_low_xyz, 4).tolist()} "
-                    f"need_high={np.round(need_high_xyz, 4).tolist()} "
-                    f"cfg_low={np.round(cur_low, 4).tolist()} "
-                    f"cfg_high={np.round(cur_high, 4).tolist()}"
-                )
+        # if self.auto_expand_abs_pose_limit:
+        #     new_low = np.minimum(cur_low, need_low_xyz)
+        #     new_high = np.maximum(cur_high, need_high_xyz)
+        #     if np.max(np.abs(new_low - cur_low)) > 1e-9 or np.max(
+        #         np.abs(new_high - cur_high)
+        #     ) > 1e-9:
+        #         self.xyz_bounding_box = gym.spaces.Box(
+        #             new_low.astype(np.float64),
+        #             new_high.astype(np.float64),
+        #             dtype=np.float64,
+        #         )
+        #         print(
+        #             "[SAFETY_BOX] auto-expand"
+        #             f"{'' if reason == '' else f'({reason})'} "
+        #             f"xyz_bounding_box.low={np.round(cur_low, 4).tolist()} "
+        #             f"xyz_bounding_box.high={np.round(cur_high, 4).tolist()} "
+        #             f"xyz_low={np.round(new_low, 4).tolist()} "
+        #             f"xyz_high={np.round(new_high, 4).tolist()}"
+        #         )
+        # else:
+        #     bad_low = need_low_xyz < cur_low - 1e-9
+        #     bad_high = need_high_xyz > cur_high + 1e-9
+        #     if np.any(bad_low) or np.any(bad_high):
+        #         names = np.array(["x", "y", "z"])
+        #         clipped_axes = names[np.logical_or(bad_low, bad_high)].tolist()
+        #         print(
+        #             "[SAFETY_BOX] warning key pose outside configured xyz bounds "
+        #             f"axes={clipped_axes} "
+        #             f"need_low={np.round(need_low_xyz, 4).tolist()} "
+        #             f"need_high={np.round(need_high_xyz, 4).tolist()} "
+        #             f"cfg_low={np.round(cur_low, 4).tolist()} "
+        #             f"cfg_high={np.round(cur_high, 4).tolist()}"
+        #         )
 
     def clip_safety_box(self, pose: np.ndarray) -> np.ndarray:
         pose = np.array(pose, dtype=np.float64).copy()

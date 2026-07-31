@@ -21,6 +21,7 @@ sigmoid = lambda x: 1 / (1 + np.exp(-x))
 def _apply_deadband(action: np.ndarray, deadband: float) -> np.ndarray:
     filtered = np.array(action, dtype=np.float32, copy=True)
     filtered[np.abs(filtered) < deadband] = 0.0
+    # print("Filtered action:", filtered, flush=True)
     return filtered
 
 class HumanClassifierWrapper(gym.Wrapper):
@@ -375,6 +376,7 @@ class SpacemouseIntervention(gym.ActionWrapper):
             expert_a[:3] *= self.expert_linear_scale
         if expert_a.shape[0] >= 6:
             expert_a[3:6] *= self.expert_angular_scale
+        
         button_pressed = bool(self.left or self.right)
         intervened = bool(np.linalg.norm(expert_a) > 1e-6)
 
