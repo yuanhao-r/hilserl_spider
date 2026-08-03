@@ -46,7 +46,7 @@ _TELEOP_ROOT = inject_tianji_paths()
 _TLOP_IMPORT_ERROR = None
 
 try:
-    from tlop_client import ClientConfig, TlopClient
+    from tlop_client import ClientConfig, TlopClient, PayloadParameters
 except Exception as exc:  # pragma: no cover - runtime dependency
     _TLOP_IMPORT_ERROR = exc
     ClientConfig = None
@@ -135,7 +135,7 @@ class TianjiTlopBackend:
             if right_rad is None
             else np.asarray(right_rad, dtype=np.float64).reshape(7).tolist()
         )
-        print("right cmd: ", right_cmd, flush=True)
+        # print("right cmd: ", right_cmd, flush=True)
         ok = api.step(
             left_cmd,
             right_cmd,
@@ -173,6 +173,24 @@ class TianjiTlopBackend:
         )
         self.last_error = "" if ok else getattr(api, "last_error", "")
         return bool(ok)
+
+    def set_payload_empty(self, arm="LR"):
+        payload_empty = PayloadParameters(
+            mass=0.00,
+            com=(0.0, 0.0, 0.12),
+            inertia=(1e-6, 1e-6, 1e-6, 0.0, 0.0, 0.0),
+        )
+        if not self.api.set_pldprm(payload_empty, arm):
+            raise RuntimeError(self.api.last_error)
+
+    def set_payload_full(self, arm="LR"):
+        payload_full = PayloadParameters(
+            mass=0.85,
+            com=(0.0, 0.0, 0.15),
+            inertia=(0.01, 0.01, 0.01, 0.0, 0.0, 0.0),
+        )
+        if not self.api.set_pldprm(payload_full, arm):
+            raise RuntimeError(self.api.last_error)
 
     def close(self) -> None:
         if self.api is not None and hasattr(self.api, "close"):

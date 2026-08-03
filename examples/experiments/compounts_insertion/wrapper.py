@@ -64,7 +64,6 @@ class COMPONENTEnv(TianjiEnv):
         is_reset: bool = False,
         ease: bool = True,
     ) -> None:
-        del is_reset
         target = self.clip_safety_box(np.asarray(target_pose, dtype=np.float64).reshape(6))
         self._update_currpos()
         start = self.currpos.copy()
@@ -120,12 +119,12 @@ class COMPONENTEnv(TianjiEnv):
         _, current_right_rad = self.backend.get_joints_rad()
         current = np.rad2deg(np.asarray(current_right_rad, dtype=np.float64).reshape(7))
 
-        if np.max(np.abs(target - current)) < 1e-3:
-            # self._update_currpos()
-            # self.cmd_pose = self.currpos.copy()
-            # self.nextpos = self.currpos.copy()
-            # self._ik_need_seed_refresh = True
-            return
+        # if np.max(np.abs(target - current)) < 1e-3:
+        #     # self._update_currpos()
+        #     # self.cmd_pose = self.currpos.copy()
+        #     # self.nextpos = self.currpos.copy()
+        #     # self._ik_need_seed_refresh = True
+        #     return
 
         rate_hz = max(1.0, float(getattr(self.config, "INTERPOLATE_HZ", self.hz)))
         step_deg = max(1e-3, float(getattr(self.config, "INTERPOLATE_MAX_STEP_DEG", 1.2)))
@@ -149,13 +148,13 @@ class COMPONENTEnv(TianjiEnv):
             if sleep_dt > 0:
                 time.sleep(sleep_dt)
 
-        if settle:
-            hold_sec = (
-                float(settle_timeout)
-                if settle_timeout is not None
-                else float(getattr(self.config, "INTERPOLATE_SETTLE_TIMEOUT", 0.2))
-            )
-            self._move_to_right_joints_deg(target, hold_sec=max(0.0, hold_sec))
+        # if settle:
+        #     hold_sec = (
+        #         float(settle_timeout)
+        #         if settle_timeout is not None
+        #         else float(getattr(self.config, "INTERPOLATE_SETTLE_TIMEOUT", 0.2))
+        #     )
+        #     self._move_to_right_joints_deg(target, hold_sec=max(0.0, hold_sec))
 
         # self._update_currpos()
         # self.cmd_pose = self.currpos.copy()
@@ -203,12 +202,11 @@ class COMPONENTEnv(TianjiEnv):
         pose[5] += np.random.uniform(-self.random_rz_range, self.random_rz_range)
         return self.clip_safety_box(pose)
 
-    def go_to_reset(self, joint_reset=False, replay_start_pose=None, **kwargs) -> None:
-        
-        
+    def go_to_reset(self, joint_reset=False, replay_start_pose=None, **kwargs) -> None:        
         # 张开夹爪
         self._gripper_control(False)
         # 去TOP->TARGET
+        self.backend.set_payload_empty()
         waypoints = []
         if hasattr(self.config, "TOP_JOINTS"):
             waypoints.append(np.asarray(self.config.TOP_JOINTS, dtype=np.float64))
@@ -227,7 +225,10 @@ class COMPONENTEnv(TianjiEnv):
         else:
             self.interpolate_move(self.resetpos, timeout=2.0, is_reset=True)
         # 闭合夹爪
+        self.backend.set_payload_full()
+        time.sleep(0.5)
         self._gripper_control(True)
+        time.sleep(1.0)
         # 抬起TOP->RESET
         waypoints = []
         if hasattr(self.config, "TOP_JOINTS"):

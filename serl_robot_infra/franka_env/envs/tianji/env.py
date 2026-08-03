@@ -361,7 +361,7 @@ class TianjiEnv(gym.Env):
         self._last_sent_left_rad = None
         self._last_sent_right_rad = right_rad.copy()
         self._ik_need_seed_refresh = True
-        self._hold_current_target(hold_sec, right_rad=right_rad)
+        # self._hold_current_target(hold_sec, right_rad=right_rad)
 
     def _hold_current_target(self, hold_sec: float, right_rad: np.ndarray | None = None) -> None:
         if self.fake_env or self.backend is None or hold_sec <= 0:
