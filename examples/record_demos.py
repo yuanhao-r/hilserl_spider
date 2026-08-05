@@ -31,6 +31,7 @@ flags.DEFINE_string("exp_name", None, "Name of experiment corresponding to folde
 flags.DEFINE_integer("successes_needed", 20, "Number of successful demos to collect.")
 
 def leave_z(state):
+    # return state
     # print("state",state)
     state[:,:2] = 0
     state[:,3:] = 0

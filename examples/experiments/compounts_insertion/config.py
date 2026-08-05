@@ -43,7 +43,7 @@ class EnvConfig(DefaultTianjiEnvConfig):
     IMAGE_CROP = {
         "wrist_1": lambda img: img[280:, 320:960],
     }
-    DISPLAY_IMAGE = False
+    DISPLAY_IMAGE = True
 
     # Fill this with the fixed reset/right-arm standby joint angles you want.
     # Unit: degrees, same as ram_insertion's Tianji config.

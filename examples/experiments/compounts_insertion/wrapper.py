@@ -542,7 +542,7 @@ class FailureOnTiltWrapper(gym.Wrapper):
                     # optionally set reward to 0 or a negative penalty
                     reward = 0.0
                     print("\033[91m[INFO] tilt too much, failure !!!\033[0m")
-                elif pose[2] <= 0.935:
+                elif pose[2] <= 0.938:
                     done = True
                     info = dict(info or {})
                     info['succeed'] = True
