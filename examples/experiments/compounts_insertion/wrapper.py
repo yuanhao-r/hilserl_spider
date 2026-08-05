@@ -6,6 +6,8 @@ from scipy.spatial.transform import Rotation
 
 from franka_env.envs.tianji.env import TianjiEnv
 
+import math
+import gymnasium as gym
 
 class COMPONENTEnv(TianjiEnv):
     """Task wrapper for compounts insertion on the minimal Tianji backend."""
@@ -202,52 +204,84 @@ class COMPONENTEnv(TianjiEnv):
         pose[5] += np.random.uniform(-self.random_rz_range, self.random_rz_range)
         return self.clip_safety_box(pose)
 
-    def go_to_reset(self, joint_reset=False, replay_start_pose=None, **kwargs) -> None:        
-        # 张开夹爪
-        self._gripper_control(False)
-        # 去TOP->TARGET
-        self.backend.set_payload_empty()
-        waypoints = []
-        if hasattr(self.config, "TOP_JOINTS"):
-            waypoints.append(np.asarray(self.config.TOP_JOINTS, dtype=np.float64))
-        if hasattr(self.config, "TARGET_JOINTS"):
-            waypoints.append(np.asarray(self.config.TARGET_JOINTS, dtype=np.float64))
-      
-        if waypoints:
-            print("[自动复位] 关节插值移动到初始待命点...")
-            self.interpolate_joint_waypoints(
-                waypoints,
-                timeout=float(getattr(self.config, "RESET_CHAINED_TIMEOUT", 3.0)),
-                settle_final=not self.randomreset,
-                settle_timeout=float(getattr(self.config, "RESET_FINAL_SETTLE_TIMEOUT", 0.2)),
-            )
-            # time.sleep(2.0)
-        else:
-            self.interpolate_move(self.resetpos, timeout=2.0, is_reset=True)
-        # 闭合夹爪
-        self.backend.set_payload_full()
-        time.sleep(0.5)
-        self._gripper_control(True)
-        time.sleep(1.0)
-        # 抬起TOP->RESET
-        waypoints = []
-        if hasattr(self.config, "TOP_JOINTS"):
-            waypoints.append(np.asarray(self.config.TOP_JOINTS, dtype=np.float64))
-        if hasattr(self.config, "RESET_JOINTS"):
-            waypoints.append(np.asarray(self.config.RESET_JOINTS, dtype=np.float64))
+    def go_to_reset(self, joint_reset=False, replay_start_pose=None, skip_regrasp = False, **kwargs) -> None:        
+        if not skip_regrasp:
+            # 张开夹爪
+            self._gripper_control(False)
+            # 去TOP->TARGET
+            self.backend.set_payload_empty()
+            waypoints = []
+            if hasattr(self.config, "TOP_JOINTS"):
+                waypoints.append(np.asarray(self.config.TOP_JOINTS, dtype=np.float64))
+            if hasattr(self.config, "TARGET_JOINTS"):
+                waypoints.append(np.asarray(self.config.TARGET_JOINTS, dtype=np.float64))
+        
+            if waypoints:
+                print("[自动复位] 关节插值移动到初始待命点...")
+                self.interpolate_joint_waypoints(
+                    waypoints,
+                    timeout=float(getattr(self.config, "RESET_CHAINED_TIMEOUT", 3.0)),
+                    settle_final=not self.randomreset,
+                    settle_timeout=float(getattr(self.config, "RESET_FINAL_SETTLE_TIMEOUT", 0.2)),
+                )
+                # time.sleep(2.0)
+            else:
+                self.interpolate_move(self.resetpos, timeout=2.0, is_reset=True)
+            # 闭合夹爪
+            self.backend.set_payload_full()
+            time.sleep(0.5)
+            self._gripper_control(True)
+            time.sleep(1.0)
+            
+            # 抬起TOP->RESET
+            waypoints = []
+            if hasattr(self.config, "TOP_JOINTS"):
+                waypoints.append(np.asarray(self.config.TOP_JOINTS, dtype=np.float64))
+            # if hasattr(self.config, "RESET_JOINTS"):
+            #     waypoints.append(np.asarray(self.config.RESET_JOINTS, dtype=np.float64))
 
-        if waypoints:
-            print("[自动复位] 关节插值移动到初始待命点...")
-            self.interpolate_joint_waypoints(
-                waypoints,
-                timeout=float(getattr(self.config, "RESET_CHAINED_TIMEOUT", 3.0)),
-                settle_final=not self.randomreset,
-                settle_timeout=float(getattr(self.config, "RESET_FINAL_SETTLE_TIMEOUT", 0.2)),
-            )
-            # time.sleep(2.0)
-        else:
-            self.interpolate_move(self.resetpos, timeout=2.0, is_reset=True)
+            if waypoints:
+                print("[自动复位] 关节插值移动到初始待命点...")
+                self.interpolate_joint_waypoints(
+                    waypoints,
+                    timeout=float(getattr(self.config, "RESET_CHAINED_TIMEOUT", 3.0)),
+                    settle_final=not self.randomreset,
+                    settle_timeout=float(getattr(self.config, "RESET_FINAL_SETTLE_TIMEOUT", 0.2)),
+                )
+                # time.sleep(2.0)
+            else:
+                self.interpolate_move(self.resetpos, timeout=2.0, is_reset=True)
 
+        else:
+            if not self.fake_env:
+                self.backend.set_payload_full()
+
+            self._gripper_control(True)
+            time.sleep(0.2)
+            
+            waypoints = []
+            
+            if hasattr(self.config, "TOP_JOINTS"):
+                waypoints.append(np.asarray(self.config.TOP_JOINTS, dtype=np.float64))
+            # if hasattr(self.config, "RESET_JOINTS"):
+            #     waypoints.append(np.asarray(self.config.RESET_JOINTS, dtype=np.float64))
+
+            if waypoints:
+                self.interpolate_joint_waypoints(
+                    waypoints,
+                    timeout=float(getattr(self.config, "RESET_CHAINED_TIMEOUT", 3.0)),
+                    settle_final=True,
+                    settle_timeout=float(getattr(self.config, "RESET_FINAL_SETTLE_TIMEOUT", 0.2)),
+                )
+            else:
+                self.interpolate_move(self.resetpos, timeout=2.0, is_reset=True)
+
+            self._update_currpos()
+            self.cmd_pose = self.currpos.copy()
+            self.nextpos = self.currpos.copy()
+
+
+       
         base_pose = self.resetpos.copy()
         if self.randomreset:
             target_pose = base_pose.copy()
@@ -278,6 +312,38 @@ class COMPONENTEnv(TianjiEnv):
         self.cmd_pose = target_pose.copy()
         self.nextpos = target_pose.copy()        
     
+    # def go_to_reset_holding_object(self, joint_reset=False, replay_start_pose=None, **kwargs):
+    #     print("[自动复位] 失败后保持夹爪闭合，抓着物体回 RESET...")
+
+    #     if not self.fake_env:
+    #         self.backend.set_payload_full()
+
+    #     self._gripper_control(True)
+    #     time.sleep(0.2)
+
+    #     waypoints = []
+
+    #     if hasattr(self.config, "TOP_JOINTS"):
+    #         waypoints.append(np.asarray(self.config.TOP_JOINTS, dtype=np.float64))
+
+    #     if hasattr(self.config, "RESET_JOINTS"):
+    #         waypoints.append(np.asarray(self.config.RESET_JOINTS, dtype=np.float64))
+
+    #     if waypoints:
+    #         self.interpolate_joint_waypoints(
+    #             waypoints,
+    #             timeout=float(getattr(self.config, "RESET_CHAINED_TIMEOUT", 3.0)),
+    #             settle_final=True,
+    #             settle_timeout=float(getattr(self.config, "RESET_FINAL_SETTLE_TIMEOUT", 0.2)),
+    #         )
+    #     else:
+    #         self.interpolate_move(self.resetpos, timeout=2.0, is_reset=True)
+
+    #     # self._update_currpos()
+    #     time.sleep(float(self.config.reset_wait_sec))
+    #     self.cmd_pose = self.currpos.copy()
+    #     self.nextpos = self.currpos.copy()
+        
     def regrasp(self) -> None:
         self._update_currpos()
         lift_pose = self.currpos.copy()
@@ -357,8 +423,14 @@ class COMPONENTEnv(TianjiEnv):
         #     self.should_regrasp = False
         # elif bool(getattr(self.config, "AUTO_QUICK_REGRASP", True)) and not skip_regrasp:
         # self.quick_regrasp(lift_after_grasp=True)
-
-        self.go_to_reset(joint_reset=joint_reset, replay_start_pose=replay_start_pose)
+        # if skip_regrasp:
+        #     self.go_to_reset_holding_object(
+        #         joint_reset=joint_reset,
+        #         replay_start_pose=replay_start_pose,
+        #     )
+        # else:
+        #     self.go_to_reset(joint_reset=joint_reset, replay_start_pose=replay_start_pose)
+        self.go_to_reset(joint_reset=joint_reset, replay_start_pose=replay_start_pose, skip_regrasp = skip_regrasp)
         self._update_currpos()
         self.curr_path_length = 0
         # self.cmd_pose = self.currpos.copy()
@@ -367,3 +439,148 @@ class COMPONENTEnv(TianjiEnv):
         self.terminate = False
         self.max_distance = None
         return self._get_obs(), {"succeed": False}
+
+class TiltObsWrapper(gym.ObservationWrapper):
+    """
+    This observation wrapper add tilt of tcp to state.
+    """
+    def __init__(self, env):
+        super().__init__(env)
+        self.observation_space = gym.spaces.Dict({
+            "state": gym.spaces.Dict({
+                **self.env.observation_space["state"],
+                "tilt": gym.spaces.Box(-3, 3, shape=(1,))
+            }),
+            "images": gym.spaces.Dict({
+                **self.env.observation_space["images"]
+            })
+        })
+
+    def _ee_axis_from_rpy(self, roll, pitch, yaw):
+        # R = Rz(yaw) @ Ry(pitch) @ Rx(roll)
+        cr = math.cos(roll); sr = math.sin(roll)
+        cp = math.cos(pitch); sp = math.sin(pitch)
+        cy = math.cos(yaw); sy = math.sin(yaw)
+        # third column of R (end-effector local z axis in world frame)
+        vx = cy * sp * cr + sy * sr
+        vy = sy * sp * cr - cy * sr
+        vz = cp * cr
+        return vx, vy, vz
+
+    def _tilt_from_xy(self, vx, vy, vz):
+        # angle between axis and XY plane
+        return math.atan2(vz, math.hypot(vx, vy))
+
+    def observation(self, obs):
+        tilt = self._tilt_from_xy(
+            *self._ee_axis_from_rpy(*obs["state"]["tcp_pose"][3:])
+        )
+        obs = {
+            "state": {
+                **obs["state"],
+                "tilt": tilt,
+            },
+            "images": obs["images"],
+        }
+        return obs
+
+    def reset(self, **kwargs):
+        obs, info =  self.env.reset(**kwargs)
+        return self.observation(obs), info
+
+
+class FailureOnTiltWrapper(gym.Wrapper):
+    """Terminate episode with failure if end-effector axis tilts > max_tilt_deg from XY plane.
+
+    Assumes tcp_pose is in observation and contains [x,y,z, roll, pitch, yaw] in radians
+    (Quat2EulerWrapper is applied earlier in the pipeline).
+    """
+    def __init__(self, env, max_tilt_deg=5.0, pose_key="tcp_pose"):
+        super().__init__(env)
+        self.max_tilt_rad = math.radians(max_tilt_deg)
+        # self.max_tilt_rad = math.radians(30)
+        self.pose_key = pose_key
+
+    def _ee_axis_from_rpy(self, roll, pitch, yaw):
+        # R = Rz(yaw) @ Ry(pitch) @ Rx(roll)
+        cr = math.cos(roll); sr = math.sin(roll)
+        cp = math.cos(pitch); sp = math.sin(pitch)
+        cy = math.cos(yaw); sy = math.sin(yaw)
+        # third column of R (end-effector local z axis in world frame)
+        vx = cy * sp * cr + sy * sr
+        vy = sy * sp * cr - cy * sr
+        vz = cp * cr
+        return vx, vy, vz
+
+    def _tilt_from_xy(self, vx, vy, vz):
+        horiz = math.hypot(vx, vy)
+        # angle between axis and XY plane
+        return abs(math.atan2(abs(vz), horiz))
+
+    def step(self, action):
+        obs, reward, done, truncated, info = self.env.step(action)
+        try:
+            pose = obs['state'].get(self.pose_key) if isinstance(obs, dict) else None
+
+            if pose is not None and len(pose) >= 6:
+                roll, pitch, yaw = float(pose[3]), float(pose[4]), float(pose[5])
+                vx, vy, vz = self._ee_axis_from_rpy(roll, pitch, yaw)
+                # tilt = self._tilt_from_xy(vx, vy, vz)
+
+                tilt = obs['state']['tilt']
+                # print("x: %.3f, y: %.3f, z: %.3f" % (pose[0], pose[1], pose[2]))
+                # print("\ntilt: %.3f" % tilt)
+                if tilt > self.max_tilt_rad * 3.0:
+                    # mark failure: set done and annotate info
+                    done = True
+                    info = dict(info or {})
+                    info['succeed'] = False
+                    info["failure_reason"] = "tilt_exceeded"
+                    info["tilt_rad"] = tilt
+                    info["tilt_deg"] = math.degrees(tilt)
+                    info["skip_regrasp"] = True
+                    # optionally set reward to 0 or a negative penalty
+                    reward = 0.0
+                    print("\033[91m[INFO] tilt too much, failure !!!\033[0m")
+                elif pose[2] <= 0.935:
+                    done = True
+                    info = dict(info or {})
+                    info['succeed'] = True
+                    info["failure_reason"] = ""
+                    # optionally set reward to 0 or a negative penalty
+                    reward = 1.0
+                    print("\033[32m[INFO] z satisfy success condition!\033[0m")
+                # else:
+                #     eef_force = obs['state'].get('eef_force')
+                #     if  eef_force != None:
+                #         fx, fy, fz, tx, ty, tz = eef_force
+                #         scale = 1.5
+                #         if fy <= -15.0 * scale or min(math.fabs(fx), math.fabs(fz)) >= 20.0 * scale:
+                #             done = True
+                #             info = dict(info or {})
+                #             info['succeed'] = False
+                #             info["failure_reason"] = "hit_something"
+                #             info["skip_regrasp"] = True
+                #             reward = 0.0
+                #             print("\033[91m[INFO] Hit on something, failure !!!\033[0m")
+
+                if (pose[0] < 0.82 or pose[0] > 0.90 or 
+                    pose[1] < -0.28 or pose[1] > -0.178 or
+                     pose[2] > 1.05):
+                    done = True
+                    info = dict(info or {})
+                    info['succeed'] = False
+                    info["failure_reason"] = "out_of_range"
+                    info["skip_regrasp"] = True
+                    reward = 0.0
+                    # print("pose:", pose)
+                    print("\033[91m[INFO] out of range, failure !!!\033[0m")
+                # print(pose)
+
+        except Exception:
+            # be conservative: do not crash the wrapper on unexpected obs format
+            pass
+        return obs, reward, done, truncated, info
+
+    def reset(self, **kwargs):
+        return self.env.reset(**kwargs)

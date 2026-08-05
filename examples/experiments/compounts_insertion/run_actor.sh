@@ -6,4 +6,4 @@ python ../../train_rlpd.py "$@" \
     --exp_name=compounts_insertion \
     --show_runtime_q=True \
     --actor \
-    --checkpoint_path=0803train \
+    --checkpoint_path=0805train \

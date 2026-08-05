@@ -14,7 +14,7 @@ from franka_env.envs.wrappers import (
 from serl_launcher.wrappers.chunking import ChunkingWrapper
 from serl_launcher.wrappers.serl_obs_wrappers import SERLObsWrapper
 
-from experiments.compounts_insertion.wrapper import COMPONENTEnv
+from experiments.compounts_insertion.wrapper import COMPONENTEnv, TiltObsWrapper, FailureOnTiltWrapper
 
 
 _WORKSPACE_ROOT = Path(__file__).resolve().parents[4]
@@ -55,11 +55,12 @@ class EnvConfig(DefaultTianjiEnvConfig):
     TOP_JOINTS = np.array( [100.52533056, 75.83623540, -85.95455547, -111.59229686, 104.65297582, 2.33508949, -34.37380078], dtype=np.float64)
     # TARGET_JOINTS = np.array([95.03123827, 82.85038473, -79.78311246, -110.53914313, 103.97986500, 10.32664752, -31.54052448], dtype=np.float64)
     TARGET_JOINTS = np.array([91.38258573, 79.93082098, -86.75887362, -105.77373856, 99.65964863, 2.11324024, -19.66660443])
-
-
+    # TARGET_JOINTS = np.array([  94.867143,   82.51085 ,  -87.485384, -100.097618,   99.600806, 2.089233,  -15.32748 ])
+    # TARGET_JOINTS = np.array( [ 99.934153,  89.419231, -81.772938, -95.990599,  93.137957,   9.274239, -16.857622])
+    # TARGET_JOINTS = np.array([ [ 96.210557,  73.63178 , -93.657801, -99.563793, 106.935983,  -3.66819 , -12.452493]])
     CONTROL_HZ = 10
     CONTROL_TIME = 1.0 / CONTROL_HZ
-    ACTION_SCALE = np.array([0.005, 0.005, 1.0], dtype=np.float64)
+    ACTION_SCALE = np.array([0.005, 0, 1.0], dtype=np.float64)
     SPACEMOUSE_LINEAR_SCALE = 1.0
     SPACEMOUSE_ANGULAR_SCALE = 1.0
     SPACEMOUSE_DEADBAND = 0.02
@@ -88,6 +89,8 @@ class EnvConfig(DefaultTianjiEnvConfig):
     RESET_HOLD_HZ = 40.0
     GRIPPER_SLEEP = 0.6
     MAX_EPISODE_LENGTH = 200
+
+    MAX_TILT_DEGREE = 5.0
 
 
 
@@ -136,6 +139,9 @@ class TrainConfig(DefaultTrainingConfig):
                 expert_linear_scale=getattr(env_config, "SPACEMOUSE_LINEAR_SCALE", 1.0),
                 expert_angular_scale=getattr(env_config, "SPACEMOUSE_ANGULAR_SCALE", 1.0),
             )
+        env = TiltObsWrapper(env)
+        env = FailureOnTiltWrapper(env, max_tilt_deg=getattr(env_config, "MAX_TILT_DEG", 5.0))
+        
         env = RelativeFrame(env)
         env = SERLObsWrapper(env, proprio_keys=self.proprio_keys)
         env = ChunkingWrapper(env, obs_horizon=1, act_exec_horizon=None)

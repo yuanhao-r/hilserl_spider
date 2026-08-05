@@ -246,12 +246,12 @@ class LocalMetricPlotter:
 
 
 ##############################################################################
-def leave_y(state):
-    state[:,:1] = 0
-    state[:,2:] = 0
+def leave_z(state):
+    state[:,:2] = 0
+    state[:,3:] = 0
 
     # TODO: remove it after test.
-    state[:,1] = 0
+    # state[:,2] = 0
     return state
 
 def actor(agent, data_store, intvn_data_store, env, sampling_rng):
@@ -278,7 +278,7 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
                         "skip_regrasp": skip_regrasp
                     })
             # obs['state'] *= 0.0
-            obs['state'] = leave_y(obs['state'])
+            obs['state'] = leave_z(obs['state'])
 
             done = False
             start_time = time.time()
@@ -294,7 +294,7 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
                 next_obs, reward, done, truncated, info = env.step(actions)
                 # print("state_rlpd22:",obs['state'],flush=True)
                 # next_obs['state'] *= 0.0
-                next_obs['state'] = leave_y(next_obs['state'])
+                next_obs['state'] = leave_z(next_obs['state'])
 
                 obs = next_obs
 
@@ -358,7 +358,7 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
 
     obs, _ = env.reset()
     # obs['state'] *= 0.0
-    obs['state'] = leave_y(obs['state'])
+    obs['state'] = leave_z(obs['state'])
     # print("state_rlpd33:",obs['state'],flush=True)
     done = False
 
@@ -401,7 +401,7 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
 
             next_obs, reward, done, truncated, info = env.step(actions)
             # next_obs['state'] *= 0.0
-            next_obs['state'] = leave_y(next_obs['state'])
+            next_obs['state'] = leave_z(next_obs['state'])
             # print_green(f"state_rlpd111{obs['state']}.")
 
             # print("state_rlpd444:",obs['state'],flush=True)
@@ -419,11 +419,15 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
                 already_intervened = True
             else:
                 already_intervened = False
-
+            # print("action: ",actions,flush=True)
             running_return += reward
+            actions_copy = copy.deepcopy(actions)
+            actions_copy[3:] = 0.0
+            # print("action_copy: ",actions_copy,flush=True)
+
             transition = dict(
                 observations=obs,
-                actions=actions,
+                actions=actions_copy,
                 next_observations=next_obs,
                 rewards=reward,
                 masks=1.0 - done,
@@ -451,6 +455,7 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
                 info["episode"]["intervention_steps"] = intervention_steps
                 ###加入介入率###
                 ep_len = info.get("episode", {}).get("l", 0)
+                # print("episode total steps:", ep_len, flush=True)
                 ep_len = int(np.asarray(ep_len).reshape(-1)[0]) if np.size(ep_len) else int(ep_len)
                 info["episode"]["intervention_rate"] = float(intervention_steps) / max(1, ep_len)
 
@@ -469,7 +474,7 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
 
                 # print("state_rlpd55:",obs['state'],flush=True)
                 # obs['state'] *= 0.0
-                obs['state'] = leave_y(obs['state'])
+                obs['state'] = leave_z(obs['state'])
 
         if step > 0 and config.buffer_period > 0 and step % config.buffer_period == 0:
             # dump to pickle file

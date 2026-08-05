@@ -284,6 +284,7 @@ class TianjiEnv(gym.Env):
             delta_rot = Rotation.from_euler("xyz", action[3:6] * float(self.action_scale[1]))
             pose[3:] = (delta_rot * Rotation.from_euler("xyz", self.cmd_pose[3:])).as_euler("xyz")
         return pose
+        return self.clip_safety_box(pose)
 
     def step(self, action: np.ndarray) -> tuple:
         action = np.clip(np.asarray(action, dtype=np.float64).reshape(7), -1.0, 1.0)
@@ -294,7 +295,6 @@ class TianjiEnv(gym.Env):
         # TODO 不要高频开关 后续需要重构这部分代码。 当前任务不需要开
         # gripper_action = action[6] * float(self.action_scale[2] if self.action_scale.shape[0] > 2 else 1.0)
         # self._send_gripper_command(gripper_action)
-
         ret, ik_error = self._send_pos_command(self.nextpos)
         if ret == 0:
             self.cmd_pose = self.nextpos.copy()
@@ -484,13 +484,21 @@ class TianjiEnv(gym.Env):
 
     def _get_obs(self) -> dict:
         images = self.get_im()
+        if self.backend is not None:
+            try:
+                eef_force = self.backend.get_eef_force("R")
+            except Exception as exc:
+                eef_force = np.zeros(6, dtype=np.float64)
+                self.backend.last_error = str(exc)
+        else:
+            eef_force = np.zeros(6, dtype=np.float64)
         state_observation = {
             "tcp_pose": self.currpos.copy(),
             "tcp_vel": self.currvel.copy(),
             "gripper_pose": np.array([self.curr_gripper_pos], dtype=np.float64),
             "tcp_force": self.currforce.copy(),
             "tcp_torque": self.currtorque.copy(),
-            "eef_force": np.zeros(6, dtype=np.float64),
+            "eef_force": eef_force,
         }
         return copy.deepcopy({"images": images, "state": state_observation})
 

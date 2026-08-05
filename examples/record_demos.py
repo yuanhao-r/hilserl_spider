@@ -30,12 +30,23 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string("exp_name", None, "Name of experiment corresponding to folder.")
 flags.DEFINE_integer("successes_needed", 20, "Number of successful demos to collect.")
 
+def leave_z(state):
+    # print("state",state)
+    state[:,:2] = 0
+    state[:,3:] = 0
+
+    # TODO: remove it after test.
+    # state[:,2] = 0
+    return state
+
 def main(_):
     assert FLAGS.exp_name in CONFIG_MAPPING, 'Experiment folder not found.'
     config = CONFIG_MAPPING[FLAGS.exp_name]()
     env = config.get_environment(fake_env=False, save_video=False, classifier=True)
     
     obs, info = env.reset()
+    obs['state'] = leave_z(obs['state'])
+
     print("Reset done")
     transitions = []
     success_count = 0
@@ -53,6 +64,7 @@ def main(_):
         actions = np.zeros(env.action_space.sample().shape) 
         time1 = time.time()
         next_obs, rew, done, truncated, info = env.step(actions)
+        next_obs['state'] = leave_z(next_obs['state'])
         # print("original STEP-TIME = ",time.time()-time1,flush=True)
         # elapsed = time.time() - loop_start_time
         # if elapsed < LOOP_DURATION:
@@ -64,10 +76,12 @@ def main(_):
         returns += rew
         if "intervene_action" in info:
             actions = info["intervene_action"]
+        actions_copy = copy.deepcopy(actions)
+        actions_copy[3:] = 0.0
         transition = copy.deepcopy(
             dict(
                 observations=obs,
-                actions=actions,
+                actions=actions_copy,
                 next_observations=next_obs,
                 rewards=rew,
                 masks=1.0 - done,
@@ -100,6 +114,8 @@ def main(_):
             trajectory = []
             returns = 0
             obs, info = env.reset()
+            obs['state'] = leave_z(obs['state'])
+            print(obs['state'])
             print("RESET-TIME = ",time.time()-time1,flush=True)
 
     if not os.path.exists("./demo_data"):

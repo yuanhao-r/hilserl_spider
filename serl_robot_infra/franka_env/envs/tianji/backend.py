@@ -169,7 +169,7 @@ class TianjiTlopBackend:
             arm,
             open=not bool(closed),
             timeout=float(self.config.gripper_timeout),
-            wait=True,
+            wait=False,
         )
         self.last_error = "" if ok else getattr(api, "last_error", "")
         return bool(ok)
@@ -195,3 +195,14 @@ class TianjiTlopBackend:
     def close(self) -> None:
         if self.api is not None and hasattr(self.api, "close"):
             self.api.close()
+            
+    def get_eef_force(self, arm: str = "R") -> np.ndarray:
+        api = self._require_api()
+        state = api.get_state(
+            arm,
+            timeout=float(self.config.pose_timeout),
+            refresh=False,
+        )
+        return np.asarray(state.force6d, dtype=np.float64).reshape(6)
+
+    
