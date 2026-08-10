@@ -280,6 +280,8 @@ class TianjiEnv(gym.Env):
     def _pose_after_action(self, action: np.ndarray) -> np.ndarray:
         pose = self.cmd_pose.copy()
         pose[:3] += action[:3] * float(self.action_scale[0])
+        # env modify
+        pose[2] -= 0.0025
         if self.action_scale.shape[0] > 1 and abs(float(self.action_scale[1])) > 1e-9:
             delta_rot = Rotation.from_euler("xyz", action[3:6] * float(self.action_scale[1]))
             pose[3:] = (delta_rot * Rotation.from_euler("xyz", self.cmd_pose[3:])).as_euler("xyz")

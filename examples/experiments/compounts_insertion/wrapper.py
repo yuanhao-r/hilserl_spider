@@ -209,7 +209,7 @@ class COMPONENTEnv(TianjiEnv):
             # 张开夹爪
             self._gripper_control(False)
             # 去TOP->TARGET
-            self.backend.set_payload_empty()
+            self.backend.set_payload_empty("R")
             waypoints = []
             if hasattr(self.config, "TOP_JOINTS"):
                 waypoints.append(np.asarray(self.config.TOP_JOINTS, dtype=np.float64))
@@ -228,10 +228,11 @@ class COMPONENTEnv(TianjiEnv):
             else:
                 self.interpolate_move(self.resetpos, timeout=2.0, is_reset=True)
             # 闭合夹爪
-            self.backend.set_payload_full()
-            time.sleep(0.5)
+            
             self._gripper_control(True)
             time.sleep(1.0)
+            self.backend.set_payload_full("R")
+            time.sleep(0.5)
             
             # 抬起TOP->RESET
             waypoints = []
@@ -254,7 +255,7 @@ class COMPONENTEnv(TianjiEnv):
 
         else:
             if not self.fake_env:
-                self.backend.set_payload_full()
+                self.backend.set_payload_full("R")
 
             self._gripper_control(True)
             time.sleep(0.2)
@@ -430,6 +431,7 @@ class COMPONENTEnv(TianjiEnv):
         #     )
         # else:
         #     self.go_to_reset(joint_reset=joint_reset, replay_start_pose=replay_start_pose)
+        print("CMD", self.cmd_pose)
         self.go_to_reset(joint_reset=joint_reset, replay_start_pose=replay_start_pose, skip_regrasp = skip_regrasp)
         self._update_currpos()
         self.curr_path_length = 0
@@ -519,6 +521,7 @@ class FailureOnTiltWrapper(gym.Wrapper):
 
     def step(self, action):
         obs, reward, done, truncated, info = self.env.step(action)
+        eef_force = obs["state"].get("eef_force") if isinstance(obs, dict) else None
         try:
             pose = obs['state'].get(self.pose_key) if isinstance(obs, dict) else None
 
@@ -542,7 +545,7 @@ class FailureOnTiltWrapper(gym.Wrapper):
                     # optionally set reward to 0 or a negative penalty
                     reward = 0.0
                     print("\033[91m[INFO] tilt too much, failure !!!\033[0m")
-                elif pose[2] <= 0.938:
+                elif pose[2] <= 0.911: # TODO 换成闭环的
                     done = True
                     info = dict(info or {})
                     info['succeed'] = True
@@ -550,34 +553,41 @@ class FailureOnTiltWrapper(gym.Wrapper):
                     # optionally set reward to 0 or a negative penalty
                     reward = 1.0
                     print("\033[32m[INFO] z satisfy success condition!\033[0m")
-                # else:
-                #     eef_force = obs['state'].get('eef_force')
-                #     if  eef_force != None:
-                #         fx, fy, fz, tx, ty, tz = eef_force
-                #         scale = 1.5
-                #         if fy <= -15.0 * scale or min(math.fabs(fx), math.fabs(fz)) >= 20.0 * scale:
-                #             done = True
-                #             info = dict(info or {})
-                #             info['succeed'] = False
-                #             info["failure_reason"] = "hit_something"
-                #             info["skip_regrasp"] = True
-                #             reward = 0.0
-                #             print("\033[91m[INFO] Hit on something, failure !!!\033[0m")
+                else:
+                    eef_force = obs["state"].get("eef_force") if isinstance(obs, dict) else None
+                    if eef_force is not None:
+                        fx, fy, fz, tx, ty, tz = np.asarray(eef_force, dtype=np.float64).reshape(6)
+                        print(
+                            f"[eef_force_tcp] fx={fx:.3f}, fy={fy:.3f}, fz={fz:.3f}, "
+                            f"tx={tx:.3f}, ty={ty:.3f}, tz={tz:.3f}",
+                            flush=True,
+                        )
+                        scale = 1.5
+                        # if fy <= -15.0 * scale or min(math.fabs(fx), math.fabs(fz)) >= 20.0 * scale:
+                        if fy <= -10.0 or min(math.fabs(fx), math.fabs(fz)) >= 20.0 * scale:
+                            done = True
+                            info = dict(info or {})
+                            info['succeed'] = False
+                            info["failure_reason"] = "hit_something"
+                            info["skip_regrasp"] = True
+                            reward = 0.0
+                            print("fx,fy:", fx, fy)
+                            print("\033[91m[INFO] Hit on something, failure !!!\033[0m")
 
                 if (pose[0] < 0.82 or pose[0] > 0.90 or 
                     pose[1] < -0.28 or pose[1] > -0.178 or
-                     pose[2] > 1.05):
+                     pose[2] > 0.985):
                     done = True
                     info = dict(info or {})
                     info['succeed'] = False
                     info["failure_reason"] = "out_of_range"
                     info["skip_regrasp"] = True
                     reward = 0.0
-                    # print("pose:", pose)
                     print("\033[91m[INFO] out of range, failure !!!\033[0m")
                 # print(pose)
 
         except Exception:
+
             # be conservative: do not crash the wrapper on unexpected obs format
             pass
         return obs, reward, done, truncated, info

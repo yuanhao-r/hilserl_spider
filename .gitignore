@@ -4,8 +4,9 @@ openpi_test/data_raw/
 openpi_test/data_transformed/
 openpi_test/openpi/checkpoints/
 openpi_test/openpi/model/
+examples/experiments/*/081*train*/
 examples/experiments/*/080*train*/
-examples/experiments/*/0803train*/
+examples/experiments/*/08*/
 examples/experiments/*/0731train/
 examples/experiments/*/demo_data/
 examples/experiments/*/first_run*/

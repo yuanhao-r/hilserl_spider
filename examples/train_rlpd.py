@@ -247,7 +247,7 @@ class LocalMetricPlotter:
 
 ##############################################################################
 def leave_z(state):
-    print(state)
+    # print(state)
     # return state
     state[:,:2] = 0
     state[:,3:] = 0

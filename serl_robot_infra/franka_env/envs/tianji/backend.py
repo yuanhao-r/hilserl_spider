@@ -176,7 +176,7 @@ class TianjiTlopBackend:
 
     def set_payload_empty(self, arm="LR"):
         payload_empty = PayloadParameters(
-            mass=0.00,
+            mass=0.2,
             com=(0.0, 0.0, 0.12),
             inertia=(1e-6, 1e-6, 1e-6, 0.0, 0.0, 0.0),
         )
@@ -185,7 +185,7 @@ class TianjiTlopBackend:
 
     def set_payload_full(self, arm="LR"):
         payload_full = PayloadParameters(
-            mass=0.85,
+            mass=1.05,
             com=(0.0, 0.0, 0.15),
             inertia=(0.01, 0.01, 0.01, 0.0, 0.0, 0.0),
         )
@@ -198,11 +198,5 @@ class TianjiTlopBackend:
             
     def get_eef_force(self, arm: str = "R") -> np.ndarray:
         api = self._require_api()
-        state = api.get_state(
-            arm,
-            timeout=float(self.config.pose_timeout),
-            refresh=False,
-        )
-        return np.asarray(state.force6d, dtype=np.float64).reshape(6)
-
-    
+        eef = api.eeforce(arm)
+        return np.asarray(eef.external_wrench_tcp, dtype=np.float64).reshape(6)
