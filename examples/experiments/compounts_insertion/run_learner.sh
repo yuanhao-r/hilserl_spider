@@ -4,8 +4,8 @@ export XLA_PYTHON_CLIENT_PREALLOCATE=true && \
 export XLA_PYTHON_CLIENT_MEM_FRACTION=.75 && \
 python ../../train_rlpd.py \
     --exp_name=compounts_insertion \
-    --checkpoint_path=0805train2 \
-    --demo_path=./demo_data/compounts_insertion_20_demos_2026-08-05_10-35-07.pkl \
+    --checkpoint_path=0811train \
+    --demo_path=./demo_data/compounts_insertion_20_demos_2026-08-11_16-26-01.pkl \
     --learner \
     --wandb \
 
