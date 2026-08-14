@@ -20,6 +20,7 @@ class COMPONENTEnv(TianjiEnv):
 
         self._keyboard_listener = keyboard.Listener(on_press=self._on_key_press)
         self._keyboard_listener.start()
+        self.success_z = float(getattr(self.config, "SUCCESS_Z_FALLBACK", 0.918))
 
     def _on_key_press(self, key):
         if str(key) == "Key.f1":
@@ -225,6 +226,9 @@ class COMPONENTEnv(TianjiEnv):
                     settle_timeout=float(getattr(self.config, "RESET_FINAL_SETTLE_TIMEOUT", 0.2)),
                 )
                 # time.sleep(2.0)
+                self._update_currpos()
+                self.success_z = float(self.currpos[2])
+                print(f"[COMPONENTEnv] success_z from TARGET pose: {self.success_z:.6f}")
             else:
                 self.interpolate_move(self.resetpos, timeout=2.0, is_reset=True)
             # 闭合夹爪
@@ -502,7 +506,18 @@ class FailureOnTiltWrapper(gym.Wrapper):
         self.max_tilt_rad = math.radians(max_tilt_deg)
         # self.max_tilt_rad = math.radians(30)
         self.pose_key = pose_key
-
+        
+        try:
+            base_env = env.unwrapped
+            if hasattr(base_env, "config") and hasattr(base_env.config, "TARGET_JOINTS"):
+                target_joints = np.asarray(base_env.config.TARGET_JOINTS, dtype=np.float64)
+                target_pose = base_env.kinematics.pose_from_right_joints_deg(target_joints)
+                self.target_pose_x = float(target_pose[0])
+                self.target_pose_y = float(target_pose[1])
+                self.target_pose_z = float(target_pose[2])
+                
+        except Exception as exc:
+            pass
     def _ee_axis_from_rpy(self, roll, pitch, yaw):
         # R = Rz(yaw) @ Ry(pitch) @ Rx(roll)
         cr = math.cos(roll); sr = math.sin(roll)
@@ -531,7 +546,7 @@ class FailureOnTiltWrapper(gym.Wrapper):
                 # tilt = self._tilt_from_xy(vx, vy, vz)
 
                 tilt = obs['state']['tilt']
-                # print("x: %.3f, y: %.3f, z: %.3f" % (pose[0], pose[1], pose[2]))
+                print("x: %.3f, y: %.3f, z: %.3f" % (pose[0], pose[1], pose[2]))
                 # print("\ntilt: %.3f" % tilt)
                 if tilt > self.max_tilt_rad * 3.0:
                     # mark failure: set done and annotate info
@@ -545,7 +560,7 @@ class FailureOnTiltWrapper(gym.Wrapper):
                     # optionally set reward to 0 or a negative penalty
                     reward = 0.0
                     print("\033[91m[INFO] tilt too much, failure !!!\033[0m")
-                elif pose[2] <= 0.911: # TODO 换成闭环的
+                elif pose[2] <= self.success_z + 0.003:  # TODO 换成闭环的
                     done = True
                     info = dict(info or {})
                     info['succeed'] = True
@@ -564,7 +579,7 @@ class FailureOnTiltWrapper(gym.Wrapper):
                         )
                         scale = 1.5
                         # if fy <= -15.0 * scale or min(math.fabs(fx), math.fabs(fz)) >= 20.0 * scale:
-                        if fy <= -10.0 or min(math.fabs(fx), math.fabs(fz)) >= 20.0 * scale:
+                        if fy <= -12.0 or min(math.fabs(fx), math.fabs(fz)) >= 20.0 * scale:
                             done = True
                             info = dict(info or {})
                             info['succeed'] = False
@@ -574,9 +589,12 @@ class FailureOnTiltWrapper(gym.Wrapper):
                             print("fx,fy:", fx, fy)
                             print("\033[91m[INFO] Hit on something, failure !!!\033[0m")
 
-                if (pose[0] < 0.82 or pose[0] > 0.90 or 
-                    pose[1] < -0.28 or pose[1] > -0.178 or
-                     pose[2] > 0.985):
+                # if (pose[0] < 0.84 or pose[0] > 1.00 or 
+                #     pose[1] < -0.28 or pose[1] > -0.178 or
+                #      pose[2] > 0.985):
+                if (pose[0] < self.target_pose_x - 0.05 or pose[0] > self.target_pose_x + 0.05 or 
+                    pose[1] < self.target_pose_y - 0.05 or pose[1] > self.target_pose_y + 0.05 or
+                     pose[2] > self.target_pose_z + 0.05):
                     done = True
                     info = dict(info or {})
                     info['succeed'] = False
