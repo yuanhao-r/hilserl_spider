@@ -2,6 +2,7 @@ import multiprocessing
 import numpy as np
 from franka_env.spacemouse import pyspacemouse
 from typing import Tuple
+import time
 
 
 class SpaceMouseExpert:
@@ -24,6 +25,7 @@ class SpaceMouseExpert:
         self.process = multiprocessing.Process(target=self._read_spacemouse)
         self.process.daemon = True
         self.process.start()
+        self._last_diag_print = 0.0
 
     def _read_spacemouse(self):
         while True:
@@ -54,6 +56,15 @@ class SpaceMouseExpert:
         """Returns the latest action and button state of the SpaceMouse."""
         action = self.latest_data["action"]
         buttons = self.latest_data["buttons"]
+        now = time.monotonic()
+        if now - self._last_diag_print > 10.0:
+            self._last_diag_print = now
+            print(
+                f"[spacemouse diag] process_alive={self.process.is_alive()} "
+                f"pid={self.process.pid} action_norm={np.linalg.norm(action):.6f} "
+                f"buttons={buttons}",
+                flush=True,
+            )
         return np.array(action), buttons
     
     def close(self):

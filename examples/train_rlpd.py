@@ -50,8 +50,18 @@ flags.DEFINE_string("ip", "localhost", "IP address of the learner.")
 flags.DEFINE_multi_string("demo_path", None, "Path to the demo data.")
 flags.DEFINE_string("checkpoint_path", None, "Path to save checkpoints.")
 flags.DEFINE_integer("eval_checkpoint_step", 0, "Step to evaluate the checkpoint.")
-flags.DEFINE_integer("eval_n_trajs", 100, "Number of trajectories to evaluate.")
+flags.DEFINE_integer("eval_n_trajs", 25, "Number of trajectories to evaluate.")
 flags.DEFINE_boolean("save_video", False, "Save video.")
+flags.DEFINE_boolean(
+    "show_runtime_q",
+    False,
+    "Overlay critic Q estimates on the live observation display during actor runs.",
+)
+flags.DEFINE_integer(
+    "show_runtime_q_every",
+    1,
+    "Compute/display runtime Q every N actor steps when --show_runtime_q is enabled.",
+)
 
 flags.DEFINE_boolean("wandb", False, "Use wandb to log training process.")
 flags.DEFINE_string("wandb_log_path", '/home/wandb_data', "Path to save wandb log.")
@@ -122,6 +132,38 @@ def _to_scalar_float(value):
             return float(value.reshape(-1)[0])
         return None
     return None
+
+
+def _format_runtime_q(value) -> str:
+    scalar = _to_scalar_float(value)
+    return "None" if scalar is None else f"{scalar:.4f}"
+
+
+def _set_runtime_q_overlay(env, step: int, q_info: dict | None) -> None:
+    base_env = getattr(env, "unwrapped", env)
+    setter = getattr(base_env, "set_display_overlay", None)
+    if setter is None:
+        return
+    if not q_info:
+        setter(None)
+        return
+    setter(
+        [
+            f"step={step}",
+            #(
+                f"Qmin={_format_runtime_q(q_info.get('q_min'))} ",
+                f"Qmean={_format_runtime_q(q_info.get('q_mean'))} ",
+                f"Qmax={_format_runtime_q(q_info.get('q_max'))}",
+        #    ),
+        ]
+    )
+
+
+def _prepare_runtime_q_actions(observations: dict, actions) -> np.ndarray:
+    action_array = np.asarray(actions)
+    if action_array.ndim == 2 and action_array.shape[0] == 1:
+        return action_array[0]
+    return action_array
 
 
 class LocalMetricPlotter:
@@ -204,9 +246,14 @@ class LocalMetricPlotter:
 
 
 ##############################################################################
-def leave_y(state):
-    state[:,:1] = 0
-    state[:,2:] = 0
+def leave_z(state):
+    # print(state)
+    # return state
+    state[:,:2] = 0
+    state[:,3:] = 0
+
+    # TODO: remove it after test.
+    # state[:,2] = 0
     return state
 
 def actor(agent, data_store, intvn_data_store, env, sampling_rng):
@@ -233,7 +280,7 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
                         "skip_regrasp": skip_regrasp
                     })
             # obs['state'] *= 0.0
-            obs['state'] = leave_y(obs['state'])
+            obs['state'] = leave_z(obs['state'])
 
             done = False
             start_time = time.time()
@@ -249,7 +296,7 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
                 next_obs, reward, done, truncated, info = env.step(actions)
                 # print("state_rlpd22:",obs['state'],flush=True)
                 # next_obs['state'] *= 0.0
-                next_obs['state'] = leave_y(next_obs['state'])
+                next_obs['state'] = leave_z(next_obs['state'])
 
                 obs = next_obs
 
@@ -313,7 +360,7 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
 
     obs, _ = env.reset()
     # obs['state'] *= 0.0
-    obs['state'] = leave_y(obs['state'])
+    obs['state'] = leave_z(obs['state'])
     # print("state_rlpd33:",obs['state'],flush=True)
     done = False
 
@@ -341,13 +388,22 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
                     argmax=False,
                 )
                 actions = np.asarray(jax.device_get(actions))
+            if FLAGS.show_runtime_q and step % max(1, FLAGS.show_runtime_q_every) == 0:
+                q_actions = _prepare_runtime_q_actions(obs, actions)
+                q_info = jax.device_get(
+                    agent.evaluate_actions_q(
+                        observations=jax.device_put(obs),
+                        actions=jax.device_put(q_actions),
+                    )
+                )
+                _set_runtime_q_overlay(env, step, q_info)
 
         # Step environment
         with timer.context("step_env"):
 
             next_obs, reward, done, truncated, info = env.step(actions)
             # next_obs['state'] *= 0.0
-            next_obs['state'] = leave_y(next_obs['state'])
+            next_obs['state'] = leave_z(next_obs['state'])
             # print_green(f"state_rlpd111{obs['state']}.")
 
             # print("state_rlpd444:",obs['state'],flush=True)
@@ -365,11 +421,15 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
                 already_intervened = True
             else:
                 already_intervened = False
-
+            # print("action: ",actions,flush=True)
             running_return += reward
+            actions_copy = copy.deepcopy(actions)
+            actions_copy[3:] = 0.0
+            # print("action_copy: ",actions_copy,flush=True)
+
             transition = dict(
                 observations=obs,
-                actions=actions,
+                actions=actions_copy,
                 next_observations=next_obs,
                 rewards=reward,
                 masks=1.0 - done,
@@ -397,6 +457,7 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
                 info["episode"]["intervention_steps"] = intervention_steps
                 ###加入介入率###
                 ep_len = info.get("episode", {}).get("l", 0)
+                # print("episode total steps:", ep_len, flush=True)
                 ep_len = int(np.asarray(ep_len).reshape(-1)[0]) if np.size(ep_len) else int(ep_len)
                 info["episode"]["intervention_rate"] = float(intervention_steps) / max(1, ep_len)
 
@@ -415,7 +476,7 @@ def actor(agent, data_store, intvn_data_store, env, sampling_rng):
 
                 # print("state_rlpd55:",obs['state'],flush=True)
                 # obs['state'] *= 0.0
-                obs['state'] = leave_y(obs['state'])
+                obs['state'] = leave_z(obs['state'])
 
         if step > 0 and config.buffer_period > 0 and step % config.buffer_period == 0:
             # dump to pickle file

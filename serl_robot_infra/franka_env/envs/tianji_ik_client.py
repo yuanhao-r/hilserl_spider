@@ -12,6 +12,8 @@ class TianjiIKClient:
     def __init__(self, url: str, timeout: float = 1.0):
         self.url = url.rstrip("/")
         self.timeout = float(timeout)
+        self.session = requests.Session()
+        self.session.trust_env = False
 
     @staticmethod
     def _array(value: Any) -> list:
@@ -39,7 +41,7 @@ class TianjiIKClient:
             "head_z_offset": float(head_z_offset),
             "force_seed_from_current": bool(force_seed_from_current),
         }
-        response = requests.post(
+        response = self.session.post(
             f"{self.url}/solve_ik",
             json=payload,
             timeout=self.timeout,

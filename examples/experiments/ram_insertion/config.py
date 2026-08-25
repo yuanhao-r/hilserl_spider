@@ -165,10 +165,10 @@ if ROBOT_BACKEND in {"tianji", "marvin"}:
         RANDOM_Z_RANGE = 0.0
         # 可选：定向限制（单位 m）
         # 例如若“向前”为 +x，可把 RANDOM_DX_MAX 设小一些，减少前探碰撞
-        RANDOM_DX_MIN = -0.025
-        RANDOM_DX_MAX = 0.025
-        RANDOM_DY_MIN = -0.025
-        RANDOM_DY_MAX = 0.025
+        RANDOM_DX_MIN = -0.015
+        RANDOM_DX_MAX = 0.015
+        RANDOM_DY_MIN = -0.015
+        RANDOM_DY_MAX = 0.015
         RANDOM_DZ_MIN = 0.0
         RANDOM_DZ_MAX = 0.0
 
@@ -549,7 +549,7 @@ class TrainConfig(DefaultTrainingConfig):
             env = SpacemouseIntervention(
                 env,
                 gripper_control=False,
-                deadband=0.002,
+                deadband=0.08,
                 expert_linear_scale=getattr(env_config, "SPACEMOUSE_LINEAR_SCALE", 1.0),
                 expert_angular_scale=getattr(env_config, "SPACEMOUSE_ANGULAR_SCALE", 1.0),
             )

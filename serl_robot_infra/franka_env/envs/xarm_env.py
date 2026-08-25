@@ -18,8 +18,8 @@ from franka_env.camera.rs_capture import RSCapture
 from franka_env.camera.fisheye_capture import FisheyeCapture
 from franka_env.utils.rotations import euler_2_quat, quat_2_euler
 
-from xarm.wrapper import XArmAPI
-from franka_env.envs.wow_skin import WowSkin
+# from xarm.wrapper import XArmAPI
+# from franka_env.envs.wow_skin import WowSkin
 
 
 class ImageDisplayer(threading.Thread):

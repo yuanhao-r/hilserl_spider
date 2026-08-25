@@ -4,41 +4,13 @@ import time
 import numpy as np
 from pynput import keyboard
 
-from franka_env.envs.xarm_env import XArmEnv
 from franka_env.envs.tianji_env import TianjiEnv
 from franka_env.camera.video_capture import VideoCapture
 from franka_env.camera.fisheye_capture import FisheyeCapture
 from collections import OrderedDict
 
 
-
-
-ROBOT_BACKEND = os.environ.get("HILSERL_ARM_BACKEND", "tianji").lower()
-
-if ROBOT_BACKEND in {"tianji", "marvin"}:
-    BaseRAMRobotEnv = TianjiEnv
-else:
-    BaseRAMRobotEnv = XArmEnv
-
-
-# Orbbec 仅用于 wrist_1 RGB 图像源（不依赖 Gemini）
-_ram_dir = os.path.dirname(os.path.abspath(__file__))
-
-def _import_orbbec():
-    """按需导入 OrbbecCapture，仅用于 wrist_1 RGB 采集。"""
-    import sys
-    if _ram_dir not in sys.path:
-        sys.path.insert(0, _ram_dir)
-    try:
-        from orbbec_view import OrbbecCapture
-        return OrbbecCapture
-    except Exception:
-        return None
-
-# 模块加载时尝试导入一次
-OrbbecCapture = _import_orbbec()
-
-class RAMEnv(BaseRAMRobotEnv):
+class RAMEnv(TianjiEnv):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.should_regrasp = False
@@ -62,41 +34,11 @@ class RAMEnv(BaseRAMRobotEnv):
             time.sleep(sec)
 
     def init_cameras(self, name_serial_dict=None):
-        """wrist_1 用奥比中光（OrbbecCapture），wrist_2 用鱼眼（FisheyeCapture），供录 Demo 与 RL 采集图像。"""
         if self.cap is not None:
             self.close_cameras()
         self.cap = OrderedDict()
-        self._orbbec_capture = None
         for cam_name, kwargs in name_serial_dict.items():
-            if kwargs.get("camera_type") == "orbbec":
-                orbbec_cap_cls = OrbbecCapture
-                if orbbec_cap_cls is None:
-                    # 按需再试一次导入（例如从 examples/ 跑 record_demos 时 path 可能不同）
-                    import sys
-                    for p in (_ram_dir, os.getcwd()):
-                        if p and p not in sys.path:
-                            sys.path.insert(0, p)
-                    try:
-                        from orbbec_view import OrbbecCapture as _O
-                        orbbec_cap_cls = _O
-                        globals()["OrbbecCapture"] = _O
-                    except Exception as e:
-                        raise RuntimeError(
-                            "wrist_1 配置为 orbbec，但 OrbbecCapture 导入失败。请确保已安装 pyorbbecsdk： pip install pyorbbecsdk2"
-                        ) from e
-                if orbbec_cap_cls is None:
-                    raise RuntimeError(
-                        "wrist_1 配置为 orbbec，但 OrbbecCapture 导入失败。请确保已安装 pyorbbecsdk： pip install pyorbbecsdk2"
-                    )
-                cap_inner = orbbec_cap_cls(
-                    name=cam_name,
-                    dim=kwargs.get("dim", (1280, 720)),
-                    serial_number=kwargs.get("serial_number"),
-                    device_index=kwargs.get("device_index", kwargs.get("camera_index")),
-                )
-                self.cap[cam_name] = VideoCapture(cap_inner)
-                self._orbbec_capture = cap_inner
-            elif "camera_index" in kwargs:
+            if "camera_index" in kwargs:
                 self.cap[cam_name] = VideoCapture(FisheyeCapture(name=cam_name, **kwargs))
             else:
                 print(f"RAMEnv: 未识别的相机配置: {cam_name}")
@@ -330,48 +272,47 @@ class RAMEnv(BaseRAMRobotEnv):
                 )
             return
 
-        # use compliance mode for coupled reset
-        self._update_currpos()
-        self._send_pos_command(self.currpos, is_reset=True)
-        time.sleep(0.3)
+        # # use compliance mode for coupled reset
+        # self._update_currpos()
+        # self._send_pos_command(self.currpos, is_reset=True)
+        # time.sleep(0.3)
 
-        # pull up
-        self._update_currpos()
-        reset_pose = copy.deepcopy(self.currpos)
-        reset_pose[2] = reset_pose[2] + 0.07
-        self._send_pos_command(reset_pose, is_reset=True)
-        # self.interpolate_move(reset_pose, timeout=0.2, is_reset=True)
-        self._update_currpos()
+        # # pull up
+        # self._update_currpos()
+        # reset_pose = copy.deepcopy(self.currpos)
+        # reset_pose[2] = reset_pose[2] + 0.07
+        # self._send_pos_command(reset_pose, is_reset=True)
+        # # self.interpolate_move(reset_pose, timeout=0.2, is_reset=True)
+        # self._update_currpos()
         
-        if replay_start_pose is not None:
-            ret = self._send_pos_command(replay_start_pose, is_reset=True)
-            time.sleep(0.5)
-            return
+        # if replay_start_pose is not None:
+        #     ret = self._send_pos_command(replay_start_pose, is_reset=True)
+        #     time.sleep(0.5)
+        #     return
 
-        # perform joint reset if needed
-        if joint_reset:
-            print("JOINT RESET")
-            self._send_joint_command(self._BASIC_JOINT_RESET)
-            time.sleep(0.5)
-            return
+        # # perform joint reset if needed
+        # if joint_reset:
+        #     print("JOINT RESET")
+        #     self._send_joint_command(self._BASIC_JOINT_RESET)
+        #     time.sleep(0.5)
+        #     return
 
-        # perform Cartesian reset
-        reset_pose = self.resetpos.copy()
-        if self.randomreset:  # randomize reset position in xy plane
-            reset_pose[:2] += np.random.uniform(
-                -self.random_xy_range, self.random_xy_range, (2,)
-            )
-            euler_random = self._RESET_POSE[3:].copy()
-            euler_random[-1] += np.random.uniform(
-                -self.random_rz_range, self.random_rz_range
-            )
-            reset_pose[3:] = euler_random
-        ret = self._send_pos_command(reset_pose, is_reset=True)
-        if ret != 0:
-            self._send_joint_command(self._BASIC_JOINT_RESET)
+        # # perform Cartesian reset
+        # reset_pose = self.resetpos.copy()
+        # if self.randomreset:  # randomize reset position in xy plane
+        #     reset_pose[:2] += np.random.uniform(
+        #         -self.random_xy_range, self.random_xy_range, (2,)
+        #     )
+        #     euler_random = self._RESET_POSE[3:].copy()
+        #     euler_random[-1] += np.random.uniform(
+        #         -self.random_rz_range, self.random_rz_range
+        #     )
+        #     reset_pose[3:] = euler_random
+        # ret = self._send_pos_command(reset_pose, is_reset=True)
+        # if ret != 0:
+        #     self._send_joint_command(self._BASIC_JOINT_RESET)
         
-        time.sleep(0.5)
-
+        # time.sleep(0.5)
 
     def regrasp(self):
         # use compliance mode for coupled reset
@@ -507,56 +448,56 @@ class RAMEnv(BaseRAMRobotEnv):
             self._wait_stable(1.0, reason="RAM quick_regrasp close")
 
             print("[自动复位] 抓取完毕，提起到安全点...")
-            if lift_after_grasp:
-                if hasattr(self.config, "TOP_JOINTS"):
-                    linear_lift = bool(getattr(self.config, "LINEAR_LIFT_TARGET_TO_TOP", True))
-                    linear_timeout = float(getattr(self.config, "LINEAR_LIFT_TIMEOUT", 1.5))
-                    if linear_lift and hasattr(self, "_joints_deg_to_pose6"):
-                        # 改为笛卡尔直线插值：使 TARGET_JOINTS -> TOP_JOINTS 的末端路径更接近直线
-                        top_pose = self._joints_deg_to_pose6(
-                            np.array(self.config.TOP_JOINTS, dtype=np.float64)
-                        )
-                        self.interpolate_move(
-                            np.array(top_pose, dtype=np.float64),
-                            timeout=max(0.2, linear_timeout * motion_timeout_scale),
-                            is_reset=True,
-                            ease=False,
-                        )
-                    else:
-                        self.interpolate_joint_move(
-                            np.array(self.config.TOP_JOINTS, dtype=np.float64),
-                            timeout=1.5 * motion_timeout_scale,
-                            settle=intermediate_settle,
-                            settle_timeout=0.0,
-                        )
-                else:
-                    top_pose = self._GRASP_POSE.copy()
-                    top_pose[2] += 0.1
-                    self._send_pos_command(top_pose, is_reset=True)
-                self._wait_stable(dwell_final_top, reason="RAM quick_regrasp final TOP")
-            self._quick_regrasp_count += 1
-            return
+            # if lift_after_grasp:
+            #     if hasattr(self.config, "TOP_JOINTS"):
+            #         linear_lift = bool(getattr(self.config, "LINEAR_LIFT_TARGET_TO_TOP", True))
+            #         linear_timeout = float(getattr(self.config, "LINEAR_LIFT_TIMEOUT", 1.5))
+            #         if linear_lift and hasattr(self, "_joints_deg_to_pose6"):
+            #             # 改为笛卡尔直线插值：使 TARGET_JOINTS -> TOP_JOINTS 的末端路径更接近直线
+            #             top_pose = self._joints_deg_to_pose6(
+            #                 np.array(self.config.TOP_JOINTS, dtype=np.float64)
+            #             )
+            #             self.interpolate_move(
+            #                 np.array(top_pose, dtype=np.float64),
+            #                 timeout=max(0.2, linear_timeout * motion_timeout_scale),
+            #                 is_reset=True,
+            #                 ease=False,
+            #             )
+            #         else:
+            #             self.interpolate_joint_move(
+            #                 np.array(self.config.TOP_JOINTS, dtype=np.float64),
+            #                 timeout=1.5 * motion_timeout_scale,
+            #                 settle=intermediate_settle,
+            #                 settle_timeout=0.0,
+            #             )
+            #     else:
+            #         top_pose = self._GRASP_POSE.copy()
+            #         top_pose[2] += 0.1
+            #         self._send_pos_command(top_pose, is_reset=True)
+            #     self._wait_stable(dwell_final_top, reason="RAM quick_regrasp final TOP")
+            # self._quick_regrasp_count += 1
+            # return
 
-        # use compliance mode for coupled reset
-        self._update_currpos()
-        self._send_pos_command(self.currpos)
-        time.sleep(0.3)
+        # # use compliance mode for coupled reset
+        # self._update_currpos()
+        # self._send_pos_command(self.currpos)
+        # time.sleep(0.3)
         
-        self._gripper_control(False)
-        time.sleep(1.5)
+        # self._gripper_control(False)
+        # time.sleep(1.5)
 
-        top_pose = self._GRASP_POSE.copy()
-        top_pose[2] += 0.1
-        self._send_pos_command(top_pose, is_reset=True)
-        time.sleep(2.0)
+        # top_pose = self._GRASP_POSE.copy()
+        # top_pose[2] += 0.1
+        # self._send_pos_command(top_pose, is_reset=True)
+        # time.sleep(2.0)
 
-        grasp_pose = top_pose.copy()
-        grasp_pose[2] -= 0.1
-        self._send_pos_command(grasp_pose, is_reset=True)
+        # grasp_pose = top_pose.copy()
+        # grasp_pose[2] -= 0.1
+        # self._send_pos_command(grasp_pose, is_reset=True)
 
-        self._gripper_control(True)
-        self.last_gripper_act = time.time()
-        time.sleep(1.5)
+        # self._gripper_control(True)
+        # self.last_gripper_act = time.time()
+        # time.sleep(1.5)
 
     def reset(self, joint_reset=False, replay_start_pose=None, **kwargs):
         options = kwargs.get("options") or {}
@@ -582,25 +523,28 @@ class RAMEnv(BaseRAMRobotEnv):
 
             did_quick_regrasp = False
             continue_from_target_after_grasp = False
-            if self.auto_quick_regrasp and not skip_regrasp:
-                chain_from_target = bool(
-                    getattr(self.config, "CHAIN_FROM_TARGET_AFTER_GRASP", True)
-                ) and bool(getattr(self.config, "RESET_CHAINED_WAYPOINT_MOTION", True))
-                self.quick_regrasp(lift_after_grasp=(not chain_from_target))
-                did_quick_regrasp = True
-                continue_from_target_after_grasp = chain_from_target
+            # if self.auto_quick_regrasp and not skip_regrasp:
+            #     chain_from_target = bool(
+            #         getattr(self.config, "CHAIN_FROM_TARGET_AFTER_GRASP", True)
+            #     ) and bool(getattr(self.config, "RESET_CHAINED_WAYPOINT_MOTION", True))
+            #     self.quick_regrasp(lift_after_grasp=(not chain_from_target))
+            #     did_quick_regrasp = True
+            #     continue_from_target_after_grasp = chain_from_target
 
-            self.go_to_reset(
-                joint_reset=joint_reset,
-                replay_start_pose=replay_start_pose,
-                from_quick_regrasp=did_quick_regrasp,
-                from_target_after_grasp=continue_from_target_after_grasp,
-            )
+            # self.go_to_reset(
+            #     joint_reset=joint_reset,
+            #     replay_start_pose=replay_start_pose,
+            #     from_quick_regrasp=did_quick_regrasp,
+            #     from_target_after_grasp=continue_from_target_after_grasp,
+            # )
             self.curr_path_length = 0
 
-            if self.force_sensor is not None:
-                self.force_sensor.reset_baseline()
-            self._update_currpos()
+            # if self.force_sensor is not None:
+            #     self.force_sensor.reset_baseline()
+            # self._update_currpos()
+            # self.cmd_pose = self.currpos.copy()
+            # print("update cmd_pose: ", self.cmd_pose)
+
             # if hasattr(self, "_ensure_safety_box_contains_key_poses"):
             #     self._ensure_safety_box_contains_key_poses(reason="ram_reset")
             # # 复位后把控制目标与当前位置强制对齐，避免下一拍沿旧目标跳变
